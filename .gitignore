@@ -1,0 +1,4 @@
+# Ignores all build files, and the build directory
+build/*
+build
+
