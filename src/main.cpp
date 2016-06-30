@@ -1,19 +1,18 @@
-#define F_CPU 16000000 // Cpu frequency
-#ifndef __AVR_ATmega32U4__
-#    define __AVR_ATmega32U4__  // microcontroller
-#endif
-
-#include <avr/io.h>
-#include <util/delay.h>
-#include <avr/cpufunc.h>
+#include "cpu.h" // All the needed to work with the microcontroller
+#include "config.h" // Necessary configuration file
+#include "capacitive.h" // To read capacitive pins
 
 int main() {
     DDRC = _BV(7);
     _MemoryBarrier(); // Forces executing r/w ops in order
+
+    inint_inputs();
     while (1) {
-        PORTC |= _BV(7);
-        _delay_ms(1000);
-        PORTC &= ~(_BV(7));
-        _delay_ms(1000);
+        if (check_port(8))
+            PORTC |= _BV(7);
+        else
+            PORTC &= ~(_BV(7));
+        discharge_ports();
     }
+    return 0;
 }
