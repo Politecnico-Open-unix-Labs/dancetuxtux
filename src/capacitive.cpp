@@ -16,76 +16,20 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "cpu.h" // Almost all the needed to work with AVR controller
-#include "capacitive.h" // function defined in this code
-#include "settings.h" // capacitive settings
 #include <stdint.h> // uint8_t type
 #include <stddef.h> // NULL pointer
 
-static uint8_t portb_bitmask, portc_bitmask, portd_bitmask, portf_bitmask; // input bitmask (1 input, 0 no input)
-
-typedef struct {
-    volatile uint8_t * port, * ddr, * pin; // pointers to port variable
-    uint8_t bitmask; // bitmask for that port
-} pin_t;
-
-static inline uint8_t check_pin(pin_t pin) __attribute__((always_inline)); // Some utils
-static inline pin_t pin_to_port(uint8_t pin) __attribute__((always_inline)); // always_inline forces inlining
-
-// Maybe add this into an util.cpp file ?
-static inline pin_t pin_to_port(uint8_t pin) { // Arduino pin to Atmega port id
-    pin_t ret_val;
-
-    switch (pin) {
-        // Pins connected to PORTB
-        case 8:  ret_val.bitmask = _BV(4); ret_val.port = &PORTB; break;
-        case 9:  ret_val.bitmask = _BV(5); ret_val.port = &PORTB; break;
-        case 10: ret_val.bitmask = _BV(6); ret_val.port = &PORTB; break;
-        case 11: ret_val.bitmask = _BV(7); ret_val.port = &PORTB; break;   
-        // Pins mapped on PORTC
-        case 5:  ret_val.bitmask = _BV(6); ret_val.port = &PORTC; break;
-        case 13: ret_val.bitmask = _BV(7); ret_val.port = &PORTC; break;
-        // Pins mapped on PORTD
-        case 3:  ret_val.bitmask = _BV(0); ret_val.port = &PORTD; break;
-        case 2:  ret_val.bitmask = _BV(1); ret_val.port = &PORTD; break;
-        case 0:  ret_val.bitmask = _BV(2); ret_val.port = &PORTD; break;
-        case 1:  ret_val.bitmask = _BV(3); ret_val.port = &PORTD; break;
-        case 4:  ret_val.bitmask = _BV(4); ret_val.port = &PORTD; break;
-        case 12: ret_val.bitmask = _BV(6); ret_val.port = &PORTD; break;
-        case 6:  ret_val.bitmask = _BV(7); ret_val.port = &PORTD; break;    
-        // Pins mapped on PORTF (A0, A1, ... respectively 14, 15, ...)
-        case 19: ret_val.bitmask = _BV(0); ret_val.port = &PORTF; break;
-        case 18: ret_val.bitmask = _BV(1); ret_val.port = &PORTF; break;
-        case 17: ret_val.bitmask = _BV(4); ret_val.port = &PORTF; break;
-        case 16: ret_val.bitmask = _BV(5); ret_val.port = &PORTF; break;
-        case 15: ret_val.bitmask = _BV(6); ret_val.port = &PORTF; break;
-        case 14: ret_val.bitmask = _BV(7); ret_val.port = &PORTF; break;
-        default: // Non standard pins
-            ret_val.port = NULL;
-            ret_val.ddr  = NULL;
-            ret_val.pin  = NULL;
-            ret_val.bitmask = 0;
-    }
-
-    // Adjust all the other port settings
-    if (ret_val.port == &PORTB) {
-        ret_val.ddr  = &DDRB;
-        ret_val.pin  = &PINB;
-    } else if (ret_val.port == &PORTC) {
-        ret_val.ddr  = &DDRC;
-        ret_val.pin  = &PINC;
-    } else if (ret_val.port == &PORTD) {
-        ret_val.ddr  = &DDRD;
-        ret_val.pin  = &PIND;
-    } else if (ret_val.port == &PORTF) {
-        ret_val.ddr  = &DDRF;
-        ret_val.pin  = &PINF;
-    }
-
-    return ret_val;
-}
+#include "cpu.h" // Almost all the needed to work with AVR controller
+#include "capacitive.h" // function defined in this code
+#include "pin_utils.h" // id_to_pin function
+#include "settings.h" // capacitive settings
 
 // Note: inline will not work between multiple files unless LTO is enabled (compile with -flto)
+static uint8_t portb_bitmask, portc_bitmask, portd_bitmask, portf_bitmask; // input bitmask (1 input, 0 no input)
+
+/* check pin function */
+static inline uint8_t check_pin(pin_t pin) __attribute__((always_inline));
+
 void inint_inputs(const uint8_t inputs[], const uint8_t inputs_len)
 {
     pin_t temp; // temporany, to switch pins
@@ -94,7 +38,7 @@ void inint_inputs(const uint8_t inputs[], const uint8_t inputs_len)
     // Automatically sets up input ports bitmask
     portd_bitmask = portb_bitmask = portc_bitmask = portf_bitmask = 0; // sets all to zero
     for (i = 0; i < inputs_len; i++) { // for each input
-        temp = pin_to_port(inputs[i]);
+        temp = id_to_pin(inputs[i]);
         if (temp.port == &PORTB)
             portb_bitmask |= temp.bitmask;
         if (temp.port == &PORTC)
@@ -132,8 +76,8 @@ unsigned char check_port(uint8_t in)
     uint8_t ret_val; // return value
     uint8_t tmp_bitmask, old_SREG = SREG;
     
-    pin = pin_to_port(in); // Gets an usable pin data structure
-    
+    pin = id_to_pin(in); // Gets an usable pin data structure
+
     // Safety code: check the pin is enabled for capacitive
     if (pin.port == &PORTB)
         tmp_bitmask = portb_bitmask;
