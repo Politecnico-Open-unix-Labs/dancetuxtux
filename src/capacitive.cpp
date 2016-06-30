@@ -22,10 +22,6 @@
 #include <stdint.h> // uint8_t type
 #include <stddef.h> // NULL pointer
 
-// Declared in config.h, included in main. Do not include config.h here
-extern const uint8_t inputs[];
-extern const uint8_t inputs_len;
-
 static uint8_t portb_bitmask, portc_bitmask, portd_bitmask, portf_bitmask; // input bitmask (1 input, 0 no input)
 
 typedef struct {
@@ -37,7 +33,7 @@ static inline uint8_t check_pin(pin_t pin) __attribute__((always_inline)); // So
 static inline pin_t pin_to_port(uint8_t pin) __attribute__((always_inline)); // always_inline forces inlining
 
 // Maybe add this into an util.cpp file ?
-static inline pin_t pin_to_port(uint8_t pin) { // Arduino pin to atmega port id
+static inline pin_t pin_to_port(uint8_t pin) { // Arduino pin to Atmega port id
     pin_t ret_val;
 
     switch (pin) {
@@ -90,7 +86,7 @@ static inline pin_t pin_to_port(uint8_t pin) { // Arduino pin to atmega port id
 }
 
 // Note: inline will not work between multiple files unless LTO is enabled (compile with -flto)
-void inint_inputs(void)
+void inint_inputs(const uint8_t inputs[], const uint8_t inputs_len)
 {
     pin_t temp; // temporany, to switch pins
     uint8_t i; // counter

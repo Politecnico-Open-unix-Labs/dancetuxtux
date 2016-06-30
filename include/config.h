@@ -9,11 +9,7 @@
 #define INPUT_PIN_RIGHT 11
 
 // Do not change the name of the following variables
-
-// Declares variables as extern const.
-// It is necessary, because declaring a variable as const makes automatically static
-extern const uint8_t inputs[];
-extern const uint8_t inputs_len;
+// You should not include this file outside main.cpp
 
 // Array of input pins
 const uint8_t inputs[] = {INPUT_PIN_UP, INPUT_PIN_DOWN, INPUT_PIN_LEFT, INPUT_PIN_RIGHT};

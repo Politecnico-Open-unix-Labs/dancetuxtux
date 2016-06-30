@@ -24,9 +24,9 @@ TODO:
 Ordered by importance
 
 * Tests & bugfix
-* Better capacitive interface
 * Flexible Timer time measurment
 * Sensibility Adjust
 * Debouncing
-* Improve the quality of this readme
+* Add a description to this readme
 * Makefile for all platforms
+* Enrich Troubleshooting section
