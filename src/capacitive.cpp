@@ -26,6 +26,9 @@
 
 // Note: inline will not work between multiple files unless LTO is enabled (compile with -flto)
 static uint8_t portb_bitmask, portc_bitmask, portd_bitmask, portf_bitmask; // input bitmask (1 input, 0 no input)
+static uint8_t portb_used_mask, portc_used_mask, // automagic discharge when necessary 
+               portd_used_mask, portf_used_mask;
+               
 
 /* check pin function */
 static inline uint8_t check_pin(pin_t pin) __attribute__((always_inline));
@@ -36,7 +39,7 @@ void inint_inputs(const uint8_t inputs[], const uint8_t inputs_len)
     uint8_t i; // counter
     
     // Automatically sets up input ports bitmask
-    portd_bitmask = portb_bitmask = portc_bitmask = portf_bitmask = 0; // sets all to zero
+    portb_bitmask = portc_bitmask = portd_bitmask = portf_bitmask = 0; // sets all to zero
     for (i = 0; i < inputs_len; i++) { // for each input
         temp = id_to_pin(inputs[i]);
         if (temp.port == &PORTB)
@@ -48,6 +51,8 @@ void inint_inputs(const uint8_t inputs[], const uint8_t inputs_len)
         if (temp.port == &PORTF)
             portf_bitmask |= temp.bitmask;
     }
+
+    discharge_ports(); // complete the setup by making ports readable
 }
 
 void discharge_ports(void)
@@ -68,38 +73,62 @@ void discharge_ports(void)
 
     // wait some time, this way the capacitor connected get discharged
     _delay_us(DISCHARGE_TIME);
+    
+    // ports are now usable
+    portb_used_mask = portc_used_mask = portd_used_mask = portf_used_mask = 0;
 }
 
-unsigned char check_port(uint8_t in)
+uint8_t check_port(uint8_t in)
 {
-    pin_t pin;
+    pin_t pin; // comfortable pin structure
     uint8_t ret_val; // return value
-    uint8_t tmp_bitmask, old_SREG = SREG;
+    uint8_t old_SREG; // to store interrupt configuration
+    uint8_t * tmp_bitmask, * tmp_used_bitmask;
     
     pin = id_to_pin(in); // Gets an usable pin data structure
 
     // Safety code: check the pin is enabled for capacitive
-    if (pin.port == &PORTB)
-        tmp_bitmask = portb_bitmask;
-    else if (pin.port == &PORTC)
-        tmp_bitmask = portc_bitmask;
-    else if (pin.port == &PORTD)
-        tmp_bitmask = portd_bitmask;
-    else if (pin.port == &PORTF)
-        tmp_bitmask = portf_bitmask;
-    else // Should never happen
-        tmp_bitmask = 0; // This will lead to an error
-    
-    if (!(tmp_bitmask & pin.bitmask))
-        return -1; // Error, port was not enabled for capacitive
+    if (pin.port == &PORTB) {
+        tmp_bitmask = &portb_bitmask;
+        tmp_used_bitmask = &portb_used_mask;
+    } else if (pin.port == &PORTC) {
+        tmp_bitmask = &portc_bitmask;
+        tmp_used_bitmask = &portc_used_mask;
+    } else if (pin.port == &PORTD) {
+        tmp_bitmask = &portd_bitmask;
+        tmp_used_bitmask = &portd_used_mask;
+    } else if (pin.port == &PORTF) {
+        tmp_bitmask = &portf_bitmask;
+        tmp_used_bitmask = &portf_used_mask;
+    } else { // Should never happen
+        tmp_bitmask = NULL; // This will lead to an error
+        tmp_used_bitmask = NULL;
+    }
 
-    // ports should be already discharged
+    if ((tmp_bitmask == NULL) // pin does not exists
+            || !(*tmp_bitmask & pin.bitmask)) // pin not enabled
+        return -1; // Cannot use this port for capacitive sensor, error
+
+    // Now check if can read the port
+    if ((tmp_used_bitmask == NULL) // This check might be unuseful
+            || (*tmp_used_bitmask & pin.bitmask)) // if port was used
+        discharge_ports(); // Cannot read data after use without a prior reset
+                           // so reset here
+
+    // Now we are ready to actually read
+    _MemoryBarrier();
+    old_SREG = SREG; // Stores interrupt configuration
+    _MemoryBarrier();
     SREG = 0; // disables interrupts for a while
     _MemoryBarrier(); // Do not go on until SREG is zero
-    ret_val = check_pin(pin); // time critical section
+    ret_val = check_pin(pin); // time critical section, readng
     SREG = old_SREG; // re-enable interrupts (if enabled)
 
-    return ret_val;
+    // sets the port as used
+    if (tmp_used_bitmask != NULL)
+        *tmp_used_bitmask |= pin.bitmask;
+
+    return !!ret_val; // binary return, or 1, or 0
 }
 
 // ====== ALL THE HARD WORK IS DONE HERE ======

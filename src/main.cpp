@@ -30,7 +30,7 @@ int main() {
             PORTC |= _BV(7);
         else
             PORTC &= ~(_BV(7));
-        discharge_ports();
+        // discharge_ports();
     }
     return 0;
 }
