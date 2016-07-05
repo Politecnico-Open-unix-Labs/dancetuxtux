@@ -1,10 +1,3 @@
-#ifndef __cplusplus
-#    error "You need a C++ compiler to build this file, try using g++ instead of gcc"
-#endif
-#if __cplusplus < 201100L
-#    error "You need at least C++11 to compile this file. Try compiling with --std=c++11"
-#endif
-
 // This project needs an Atmega32u4, other processor are not supported
 #ifndef __AVR_ATmega32U4__
 #    define __AVR_ATmega32U4__  // microcontroller

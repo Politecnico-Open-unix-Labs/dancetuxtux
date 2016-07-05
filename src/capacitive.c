@@ -22,6 +22,7 @@
 #include "cpu.h" // Almost all the needed to work with AVR controller
 #include "capacitive.h" // function defined in this code
 #include "pin_utils.h" // id_to_pin function
+#include "timer_utils.h" // many timer functions
 #include "settings.h" // capacitive settings
 
 // Note: inline will not work between multiple files unless LTO is enabled (compile with -flto)
@@ -30,7 +31,7 @@ static uint8_t portb_used_mask, portc_used_mask, // automagic discharge when nec
                portd_used_mask, portf_used_mask;
                
 
-/* check pin function */
+/* check pin low level function */
 static inline uint8_t check_pin(pin_t pin) __attribute__((always_inline));
 
 void inint_inputs(const uint8_t inputs[], const uint8_t inputs_len)
@@ -135,6 +136,8 @@ uint8_t check_port(uint8_t in)
 static inline uint8_t check_pin(pin_t pin)
 {
     uint8_t ret_val;
+
+ //   timer_config(0, TIMER_PRESCALER_SCK); // Setups TIMER 0
     
     // _MemoryBarrier function forces r/w to follow the order. It should not slow down execution
     *(pin.ddr) &= ~(pin.bitmask); // Make the port an input (connect internal resistor)
