@@ -22,10 +22,12 @@
 
 int main() {
 
+
     DDRC = _BV(7); // output
     _MemoryBarrier(); // Forces executing r/w ops in order
 
     inint_inputs(inputs, inputs_len);
+    set_sensibility(12);
     while (1) {
         if (check_port(8))
             PORTC |= _BV(7);

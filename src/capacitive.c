@@ -17,19 +17,20 @@
 */
 
 #include <stdint.h> // uint8_t type
+#include <string.h> // memcpy
 #include <stddef.h> // NULL pointer
 
 #include "cpu.h" // Almost all the needed to work with AVR controller
 #include "capacitive.h" // function defined in this code
 #include "pin_utils.h" // id_to_pin function
 #include "timer_utils.h" // many timer functions
-#include "settings.h" // capacitive settings
+#include "capacitive_settings.h" // capacitive settings
 
 // Note: inline will not work between multiple files unless LTO is enabled (compile with -flto)
 static uint8_t portb_bitmask, portc_bitmask, portd_bitmask, portf_bitmask; // input bitmask (1 input, 0 no input)
 static uint8_t portb_used_mask, portc_used_mask, // automagic discharge when necessary
                portd_used_mask, portf_used_mask;
-static uint8_t _sensibility = START_SENSIBILITY;
+static uint8_t _sensibility;
 
 /* check pin low level function */
 static inline uint8_t check_pin(pin_t pin) __attribute__((always_inline));
@@ -53,7 +54,7 @@ void inint_inputs(const uint8_t inputs[], const uint8_t inputs_len)
             portf_bitmask |= temp.bitmask;
     }
 
-    _sensibility = START_SENSIBILITY;
+    set_sensibility(START_SENSIBILITY);
     discharge_ports(); // complete the setup by making ports readable
 }
 
@@ -128,46 +129,94 @@ uint8_t check_port(uint8_t in)
     // Now we are ready to actually read
     _MemoryBarrier();
     old_SREG = SREG; // Stores interrupt configuration
-    _MemoryBarrier();
     SREG = 0; // disables interrupts for a while
-    _MemoryBarrier(); // Do not go on until SREG is zero
+
     ret_val = check_pin(pin); // time critical section, readng
+
     SREG = old_SREG; // re-enable interrupts (if enabled)
 
-    // sets the port as used
+    // marks the port as used
     if (tmp_used_bitmask != NULL)
         *tmp_used_bitmask |= pin.bitmask;
 
     return !!ret_val; // binary return, or 1, or 0
 }
 
-// ====== ALL THE HARD WORK IS DONE HERE ======
-static inline uint8_t check_pin(pin_t pin)
-{
-    uint8_t ret_val = 0;
+// ====== ALL THE 'HARD WORK' IS DONE HERE ======
 
- //   timer_config(0, TIMER_PRESCALER_SCK); // Setups TIMER 0
+// N.B. _MemoryBarrier function forces r/w to follow the order. It should not slow down execution
+#define CAP_CHARGHE(_pin)                                                                                           \
+    _MemoryBarrier();                                                                                               \
+    *(_pin.ddr) &= ~(_pin.bitmask); /* Make the port an input (connect internal resistor) */                        \
+    _MemoryBarrier();                                                                                               \
+    *(_pin.port) |= _pin.bitmask; /* writes 1 on the pin (port is a pull-up). Capacitor charging starts now */      \
+    _MemoryBarrier()
 
-    // _MemoryBarrier function forces r/w to follow the order. It should not slow down execution
-    *(pin.ddr) &= ~(pin.bitmask); // Make the port an input (connect internal resistor)
-    _MemoryBarrier();
-    *(pin.port) |= pin.bitmask; // writes 1 on the pin (port is a pull-up). Capacitor charging starts now
-    _MemoryBarrier();
+/* Performs the reading */
+#define CAP_READ(_pin) *(_pin.pin) & _pin.bitmask //  N.B Keep _pin on the local stack, this way gains in speed
 
-    _delay_loop_2(_sensibility);
+/* discharge port, it is important to leave the pis low if you want to do multiple readings
+   discharge port function should do the same thing on all the pins, but it is safer to do it just after reading */
+#define CAP_DISCHARGHE(_pin)                                                                                        \
+    _MemoryBarrier();                                                                                               \
+    *(_pin.port) &= ~(_pin.bitmask); /* wirtes 0 */                                                                 \
+    _MemoryBarrier();                                                                                               \
+    *(_pin.ddr) |= _pin.bitmask; /* port is now an output (disconnect internal resistor) */                         \
+    _MemoryBarrier()
 
-    if (*(pin.pin) & pin.bitmask) // if pin is HIGH key was not pressed
-        ret_val = 0;
-    else // if pin is LOW key was pressed
-        ret_val = 1;
+// Actual implementation
+#define CAP_HARD_WORK(pin, delay)                                                                                   \
+    uint8_t read, _count = _sensibility / 3;                                                                        \
+    pin_t temp;  /* Needet to keep a copy of param on local stack. This way gains a faster access */                \
+    memcpy(&temp, &pin, sizeof(pin)); /* DO NOT REMOVE THIS, faster access is necessary for fast reading */         \
+    CAP_CHARGHE(temp);                                                                                              \
+    __builtin_avr_delay_cycles(delay);  /* Waits some nops */                                                       \
+    _delay_loop_1(_count); /* waits the rest of the time. Each loop requires 3 instructions */                      \
+    read = CAP_READ(temp); /* here local stack reduces asm overhead, i.e. overhead is only given by loops */        \
+    CAP_DISCHARGHE(temp);                                                                                           \
+    return !read
 
-    // discharge port, it is important to leave the pis low if you want to do multiple readings
-    // discharge port function should do the same thing, but it is safer to do it also here
-    _MemoryBarrier();
-    *(pin.port) &= ~(pin.bitmask); // wirtes 0
-    _MemoryBarrier();
-    *(pin.ddr) |= pin.bitmask; // port is now an output (disconnect internal resistor)
-    _MemoryBarrier();
+#define CAP_HARD_WORK_NO_LOOP(pin, delay)                                                                           \
+    uint8_t read;                                                                                                   \
+    pin_t temp;  /* Needet to keep a copy of param on local stack. This way gains a faster access */                \
+    memcpy(&temp, &pin, sizeof(pin)); /* DO NOT REMOVE THIS, faster access is necessary for fast reading */         \
+    CAP_CHARGHE(pin);                                                                                               \
+    __builtin_avr_delay_cycles(delay);  /* Waits some nops */                                                       \
+    read = CAP_READ(temp); /* here local stack reduces asm overhead, i.e. overhead is only given by loops */        \
+    CAP_DISCHARGHE(pin);                                                                                            \
+    return !read
 
-    return ret_val;
+// Do not inline the following function !!! They work because the compiler will not mix their code with the rest
+__attribute__((noinline)) static uint8_t hard_work_0(pin_t pin) { CAP_HARD_WORK(pin, 0); }
+__attribute__((noinline)) static uint8_t hard_work_1(pin_t pin) { CAP_HARD_WORK(pin, 1); }
+__attribute__((noinline)) static uint8_t hard_work_2(pin_t pin) { CAP_HARD_WORK(pin, 2); }
+__attribute__((noinline)) static uint8_t hard_work_no_loop_0(pin_t pin) { CAP_HARD_WORK_NO_LOOP(pin, 0); }
+__attribute__((noinline)) static uint8_t hard_work_no_loop_1(pin_t pin) { CAP_HARD_WORK_NO_LOOP(pin, 1); }
+__attribute__((noinline)) static uint8_t hard_work_no_loop_2(pin_t pin) { CAP_HARD_WORK_NO_LOOP(pin, 2); }
+
+// Implements three times the function, each time with a different delay
+static inline // this function may be inlined
+uint8_t check_pin(pin_t pin) {
+    uint8_t read;
+    uint8_t _algorithm = _sensibility % 3;
+
+    if (_sensibility < 3) { //tis implies (_sensibility / 3) == 0, that will cause '_count' starts from 0.
+        // when calling _delay_loop_1 with 0 parameter it will actually loops 256 times
+        // So the solution is to not call the _delay_loop_1 when it will cause a bug
+        if (_algorithm == 0) // Use algorithm 0
+            read = hard_work_no_loop_0(pin);
+        else if (_algorithm == 1) // Yses algorithm 1
+            read = hard_work_no_loop_1(pin);
+        else if (_algorithm == 2) // Yses algorithm 2
+            read = hard_work_no_loop_2(pin);
+    } else {
+        if (_algorithm == 0) // Use algorithm 0
+            read = hard_work_0(pin);
+        else if (_algorithm == 1) // Yses algorithm 1
+            read = hard_work_1(pin);
+        else if (_algorithm == 2) // Yses algorithm 2
+            read = hard_work_2(pin);
+    }
+
+    return read;
 }
