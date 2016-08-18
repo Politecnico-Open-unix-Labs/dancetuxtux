@@ -27,9 +27,9 @@
 
 // Note: inline will not work between multiple files unless LTO is enabled (compile with -flto)
 static uint8_t portb_bitmask, portc_bitmask, portd_bitmask, portf_bitmask; // input bitmask (1 input, 0 no input)
-static uint8_t portb_used_mask, portc_used_mask, // automagic discharge when necessary 
+static uint8_t portb_used_mask, portc_used_mask, // automagic discharge when necessary
                portd_used_mask, portf_used_mask;
-               
+static uint8_t _sensibility = START_SENSIBILITY;
 
 /* check pin low level function */
 static inline uint8_t check_pin(pin_t pin) __attribute__((always_inline));
@@ -38,7 +38,7 @@ void inint_inputs(const uint8_t inputs[], const uint8_t inputs_len)
 {
     pin_t temp; // temporany, to switch pins
     uint8_t i; // counter
-    
+
     // Automatically sets up input ports bitmask
     portb_bitmask = portc_bitmask = portd_bitmask = portf_bitmask = 0; // sets all to zero
     for (i = 0; i < inputs_len; i++) { // for each input
@@ -53,11 +53,19 @@ void inint_inputs(const uint8_t inputs[], const uint8_t inputs_len)
             portf_bitmask |= temp.bitmask;
     }
 
+    _sensibility = START_SENSIBILITY;
     discharge_ports(); // complete the setup by making ports readable
 }
 
+void set_sensibility(uint8_t new_sens) {
+    if (new_sens == 0)
+        _sensibility = START_SENSIBILITY;
+    else
+        _sensibility = new_sens;
+}
+
 void discharge_ports(void)
-{ 
+{
     // Write 0 on the keyboard pins
     PORTB &= ~(portb_bitmask);
     PORTC &= ~(portc_bitmask);
@@ -74,9 +82,10 @@ void discharge_ports(void)
 
     // wait some time, this way the capacitor connected get discharged
     _delay_us(DISCHARGE_TIME);
-    
+
     // ports are now usable
     portb_used_mask = portc_used_mask = portd_used_mask = portf_used_mask = 0;
+    _MemoryBarrier();
 }
 
 uint8_t check_port(uint8_t in)
@@ -85,7 +94,7 @@ uint8_t check_port(uint8_t in)
     uint8_t ret_val; // return value
     uint8_t old_SREG; // to store interrupt configuration
     uint8_t * tmp_bitmask, * tmp_used_bitmask;
-    
+
     pin = id_to_pin(in); // Gets an usable pin data structure
 
     // Safety code: check the pin is enabled for capacitive
@@ -135,18 +144,17 @@ uint8_t check_port(uint8_t in)
 // ====== ALL THE HARD WORK IS DONE HERE ======
 static inline uint8_t check_pin(pin_t pin)
 {
-    uint8_t ret_val;
+    uint8_t ret_val = 0;
 
  //   timer_config(0, TIMER_PRESCALER_SCK); // Setups TIMER 0
-    
+
     // _MemoryBarrier function forces r/w to follow the order. It should not slow down execution
     *(pin.ddr) &= ~(pin.bitmask); // Make the port an input (connect internal resistor)
     _MemoryBarrier();
     *(pin.port) |= pin.bitmask; // writes 1 on the pin (port is a pull-up). Capacitor charging starts now
     _MemoryBarrier();
 
-    // Now have to wait some time
-    _delay_us(1); // TODO: use timers instead
+    _delay_loop_2(_sensibility);
 
     if (*(pin.pin) & pin.bitmask) // if pin is HIGH key was not pressed
         ret_val = 0;

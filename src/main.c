@@ -21,7 +21,8 @@
 #include "capacitive.h" // To read capacitive pins
 
 int main() {
-    DDRC = _BV(7);
+
+    DDRC = _BV(7); // output
     _MemoryBarrier(); // Forces executing r/w ops in order
 
     inint_inputs(inputs, inputs_len);
@@ -30,7 +31,7 @@ int main() {
             PORTC |= _BV(7);
         else
             PORTC &= ~(_BV(7));
-        // discharge_ports();
+        discharge_ports();
     }
     return 0;
 }
