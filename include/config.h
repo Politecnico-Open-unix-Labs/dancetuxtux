@@ -3,6 +3,8 @@
 
 #include <stdint.h> // uint8_t
 
+#define BUF_LEN 16
+
 #define INPUT_PIN_UP    8
 #define INPUT_PIN_DOWN  9
 #define INPUT_PIN_LEFT  10
@@ -16,5 +18,6 @@ const uint8_t inputs[] = {INPUT_PIN_UP, INPUT_PIN_DOWN, INPUT_PIN_LEFT, INPUT_PI
 const uint8_t inputs_len = sizeof(inputs)/sizeof(*inputs); // number of inputs
 
 // TODO: array of calling functions
+// TODO: use progmem
 
 #endif // CONFIG_H defined

@@ -15,10 +15,10 @@ LD_FLAGS=-mmcu=atmega32u4 -fPIC -flto -Wl,-emain
 PORT=/dev/ttyACM0 # Port to use if no other port was found
 OUT_NAME=dancetuxtux# Output names
 
-all: main.o capacitive.o pin_utils.o timer_utils.o circular_buffer.o build_dir
+all: main.o capacitive.o pin_utils.o timer_utils.o circular_buffer.o USB.o build_dir
 	@ # Links all object files
 	${CC} ${LD_FLAGS} ${BUILD_DIR}'/timer_utils.o' ${BUILD_DIR}'/pin_utils.o' ${BUILD_DIR}'/capacitive.o' ${BUILD_DIR}'/circular_buffer.o' \
-	    ${BUILD_DIR}'/main.o' \
+	    ${BUILD_DIR}'/USBCore.o' ${BUILD_DIR}'/main.o' \
 	    -O${O_LEVEL} -o ${BUILD_DIR}'/'${OUT_NAME}'.elf'
 	${OBJCOPY} -O ihex -j .eeprom --set-section-flags=.eeprom=alloc,load --no-change-warnings --change-section-lma .eeprom=0 \
 							   ${BUILD_DIR}'/'${OUT_NAME}'.elf' ${BUILD_DIR}'/'${OUT_NAME}'.eep' 
@@ -44,6 +44,9 @@ timer_utils.o: ${SRC_DIR}/timer_utils.c build_dir
 
 circular_buffer.o: ${SRC_DIR}/circular_buffer.c build_dir
 	${CC} -c -std=${LANG_STD} -O${O_LEVEL} ${CC_FLAGS} -I${INCLUDE_DIR}'/' ${SRC_DIR}'/circular_buffer.c' -o ${BUILD_DIR}'/circular_buffer.o' 
+
+USB.o: ${SRC_DIR}/USBCore.c build_dir
+	${CC} -c -std=${LANG_STD} -O${O_LEVEL} ${CC_FLAGS} -I${INCLUDE_DIR}'/' ${SRC_DIR}'/USBCore.c' -o ${BUILD_DIR}'/USBCore.o' 
 
 install: upload
 upload: all

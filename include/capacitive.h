@@ -12,6 +12,7 @@ void discharge_ports(void);
 /* Capacitive read function,
    returns 1 if there is contact, 0 if not, and -1 on errors */
 unsigned char check_port(uint8_t in);
-void set_sensibility(uint8_t new_sens);
+void set_threshold(uint8_t new_sens);
+uint8_t get_threshold(void);
 
 #endif // CAPACITIVE_H defined

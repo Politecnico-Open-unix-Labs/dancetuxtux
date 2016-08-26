@@ -30,7 +30,7 @@
 static uint8_t portb_bitmask, portc_bitmask, portd_bitmask, portf_bitmask; // input bitmask (1 input, 0 no input)
 static uint8_t portb_used_mask, portc_used_mask, // automagic discharge when necessary
                portd_used_mask, portf_used_mask;
-static uint8_t _sensibility;
+static uint8_t _threshold;
 
 /* check pin low level function */
 static inline uint8_t check_pin(pin_t pin) __attribute__((always_inline));
@@ -54,16 +54,12 @@ void inint_inputs(const uint8_t inputs[], const uint8_t inputs_len)
             portf_bitmask |= temp.bitmask;
     }
 
-    set_sensibility(START_SENSIBILITY);
+    set_threshold(START_THRESHOLD);
     discharge_ports(); // complete the setup by making ports readable
 }
 
-void set_sensibility(uint8_t new_sens) {
-    if (new_sens == 0)
-        _sensibility = START_SENSIBILITY;
-    else
-        _sensibility = new_sens;
-}
+void set_threshold(uint8_t new_sens) { _threshold = new_sens; }
+uint8_t get_threshold(void) { return _threshold; }
 
 void discharge_ports(void)
 {
@@ -145,28 +141,30 @@ uint8_t check_port(uint8_t in)
 // ====== ALL THE 'HARD WORK' IS DONE HERE ======
 
 // N.B. _MemoryBarrier function forces r/w to follow the order. It should not slow down execution
-#define CAP_CHARGHE(_pin)                                                                                           \
+#define CAP_CHARGHE(_pin) do {                                                                                      \
     _MemoryBarrier();                                                                                               \
     *(_pin.ddr) &= ~(_pin.bitmask); /* Make the port an input (connect internal resistor) */                        \
     _MemoryBarrier();                                                                                               \
     *(_pin.port) |= _pin.bitmask; /* writes 1 on the pin (port is a pull-up). Capacitor charging starts now */      \
-    _MemoryBarrier()
+    _MemoryBarrier();                                                                                               \
+} while (0)
 
 /* Performs the reading */
-#define CAP_READ(_pin) *(_pin.pin) & _pin.bitmask //  N.B Keep _pin on the local stack, this way gains in speed
+#define CAP_READ(_pin) (*(_pin.pin) & _pin.bitmask) //  N.B Keep _pin on the local stack, this way gains in speed
 
 /* discharge port, it is important to leave the pis low if you want to do multiple readings
    discharge port function should do the same thing on all the pins, but it is safer to do it just after reading */
-#define CAP_DISCHARGHE(_pin)                                                                                        \
-    _MemoryBarrier();                                                                                               \
+#define CAP_DISCHARGHE(_pin) do {                                                                                  \
+    _MemoryBarrier(); /* WARNING: Keep the order of the following two */                                            \
     *(_pin.port) &= ~(_pin.bitmask); /* wirtes 0 */                                                                 \
     _MemoryBarrier();                                                                                               \
     *(_pin.ddr) |= _pin.bitmask; /* port is now an output (disconnect internal resistor) */                         \
-    _MemoryBarrier()
+    _MemoryBarrier();                                                                                               \
+} while (0)
 
 // Actual implementation
-#define CAP_HARD_WORK(pin, delay)                                                                                   \
-    uint8_t read, _count = _sensibility / 3;                                                                        \
+#define CAP_HARD_WORK(pin, delay) do {                                                                              \
+    uint8_t read, _count = _threshold / 3;                                                                          \
     pin_t temp;  /* Needet to keep a copy of param on local stack. This way gains a faster access */                \
     memcpy(&temp, &pin, sizeof(pin)); /* DO NOT REMOVE THIS, faster access is necessary for fast reading */         \
     CAP_CHARGHE(temp);                                                                                              \
@@ -174,9 +172,10 @@ uint8_t check_port(uint8_t in)
     _delay_loop_1(_count); /* waits the rest of the time. Each loop requires 3 instructions */                      \
     read = CAP_READ(temp); /* here local stack reduces asm overhead, i.e. overhead is only given by loops */        \
     CAP_DISCHARGHE(temp);                                                                                           \
-    return !read
+    return !read;                                                                                                   \
+} while (0)
 
-#define CAP_HARD_WORK_NO_LOOP(pin, delay)                                                                           \
+#define CAP_HARD_WORK_NO_LOOP(pin, delay) do {                                                                      \
     uint8_t read;                                                                                                   \
     pin_t temp;  /* Needet to keep a copy of param on local stack. This way gains a faster access */                \
     memcpy(&temp, &pin, sizeof(pin)); /* DO NOT REMOVE THIS, faster access is necessary for fast reading */         \
@@ -184,7 +183,8 @@ uint8_t check_port(uint8_t in)
     __builtin_avr_delay_cycles(delay);  /* Waits some nops */                                                       \
     read = CAP_READ(temp); /* here local stack reduces asm overhead, i.e. overhead is only given by loops */        \
     CAP_DISCHARGHE(pin);                                                                                            \
-    return !read
+    return !read;                                                                                                   \
+} while (0)
 
 // Do not inline the following function !!! They work because the compiler will not mix their code with the rest
 __attribute__((noinline)) static uint8_t hard_work_0(pin_t pin) { CAP_HARD_WORK(pin, 0); }
@@ -198,9 +198,9 @@ __attribute__((noinline)) static uint8_t hard_work_no_loop_2(pin_t pin) { CAP_HA
 static inline // this function may be inlined
 uint8_t check_pin(pin_t pin) {
     uint8_t read;
-    uint8_t _algorithm = _sensibility % 3;
+    uint8_t _algorithm = _threshold % 3;
 
-    if (_sensibility < 3) { //tis implies (_sensibility / 3) == 0, that will cause '_count' starts from 0.
+    if (_threshold < 3) { //tis implies (_threshold / 3) == 0, that will cause '_count' starts from 0.
         // when calling _delay_loop_1 with 0 parameter it will actually loops 256 times
         // So the solution is to not call the _delay_loop_1 when it will cause a bug
         if (_algorithm == 0) // Use algorithm 0
