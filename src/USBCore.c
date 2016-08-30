@@ -407,7 +407,7 @@ static bool SendDescriptor(USBSetup* setup) {
 }
 
 //	Endpoint 0 interrupt
-static volatile uint8_t usb_init_done = 0;
+static volatile uint8_t usb_init_done = 0; // Becames 1 when initialization has done
 ISR(USB_COM_vect) {
     SetEP(0);
 	if (!ReceivedSetupInt())
@@ -474,7 +474,7 @@ ISR(USB_COM_vect) {
 
 	if (ok) {
 		ClearIN();
-		usb_init_done = 1;
+		usb_init_done = 1; // TODO: maybe initialization got here many times
 	} else {
 		Stall();
 	}
@@ -555,8 +555,9 @@ void __USB_init(void) {
 	TX_RX_LED_INIT;
 
 	_initEndpoints[4] = EP_TYPE_INTERRUPT_IN;
-	memset(report, 0, sizeof(report));
+	memset(report, 0, sizeof(report)); // sets all of the report to zero
 	while (usb_init_done == 0) { _delay_ms(1); } // Waits one millisecond before each test
+	_delay_ms(250); // Delays further time
 }
 
 int __SendReport(uint8_t id, const void* data, int len) {
@@ -567,33 +568,33 @@ int __SendReport(uint8_t id, const void* data, int len) {
     return ret + ret2;
 }
 
-void send_keypress(uint8_t key_code) {
+void __USB_send_keypress(uint8_t key_code) {
     uint8_t i;
     const uint8_t len = sizeof(report)/sizeof(*report);
     for (i = 2; i < len; i++) {
         if (report[i] == 0) { // inserts key code at first non-null place
             report[i] = key_code;
-            break;
+            break; // Goes to sendreport
         } else if (report[i] == key_code) { // avoid inserting twice the same key code
             i = len; // Goes to the end of the array
-            break;
+            break; // nothing has changed
         }
     }
     if (i != len) // If not reached the end
         __SendReport(2, report, sizeof(report));
 }
 
-void send_keyrelease(uint8_t key_code) {
+void __USB_send_keyrelease(uint8_t key_code) {
     uint8_t i;
     const uint8_t len = sizeof(report)/sizeof(*report);
     for (i = 2; i < len; i++) {
         if (report[i] == 0) {
             i = len; // Goes to the end of the array
-            break; // No more codes
+            break; // No more codes, nothing has changed
         } else if (report[i] == key_code) {
-            memmove(report + i, report + i + 1, (len - i - 1)*sizeof(report));
-            report[i] = 0;
-            break;
+            memmove(report + i, report + i + 1, (len - i - 1)*sizeof(*report));
+            report[len-1] = 0;
+            break; // Goes to sendreport
         }
     }
     if (i != len) // If not reached the end
