@@ -1,5 +1,3 @@
-
-
 /* Copyright (c) 2010, Peter Barrett
 ** Sleep/Wakeup support added by Michael Dreher
 **
