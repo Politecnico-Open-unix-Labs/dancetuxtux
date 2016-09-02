@@ -26,6 +26,7 @@
 #include <stdint.h> // uint8_t type
 #include <string.h> // memcpy
 #include <stddef.h> // NULL pointer
+#include <avr/pgmspace.h>
 
 #include "cpu.h" // Almost all the needed to work with AVR controller
 #include "capacitive.h" // function defined in this code
@@ -65,6 +66,31 @@ void inint_inputs(const uint8_t inputs[], const uint8_t inputs_len)
     discharge_ports(); // complete the setup by making ports readable
 }
 
+// PROGMEM version of the initialization function
+void inint_inputs_P(const uint8_t inputs[], const uint8_t inputs_len)
+{
+    pin_t temp; // temporany, to switch pins
+    uint8_t i; // counter
+
+    // Automatically sets up input ports bitmask
+    portb_bitmask = portc_bitmask = portd_bitmask = portf_bitmask = 0; // sets all to zero
+    for (i = 0; i < inputs_len; i++) { // for each input
+        temp = id_to_pin(pgm_read_byte_near(inputs + i));
+        if (temp.port == &PORTB)
+            portb_bitmask |= temp.bitmask;
+        if (temp.port == &PORTC)
+            portc_bitmask |= temp.bitmask;
+        if (temp.port == &PORTD)
+            portd_bitmask |= temp.bitmask;
+        if (temp.port == &PORTF)
+            portf_bitmask |= temp.bitmask;
+    }
+
+    set_threshold(START_THRESHOLD);
+    discharge_ports(); // complete the setup by making ports readable
+}
+
+// threshold functions
 void set_threshold(uint8_t new_sens) { _threshold = new_sens; }
 uint8_t get_threshold(void) { return _threshold; }
 

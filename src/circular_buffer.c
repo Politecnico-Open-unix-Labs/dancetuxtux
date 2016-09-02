@@ -59,6 +59,6 @@ void circular_buffer_push(struct _circular_buffer_t * const buf, const uint8_t n
         buf->pos = 0; // Resets when pos reaches the end
 }
 
-uint8_t circular_buffer_sum(const struct _circular_buffer_t * const buf) {
+circular_buffer_sum_t circular_buffer_sum(const struct _circular_buffer_t * const buf) {
     return buf->sum;
 }

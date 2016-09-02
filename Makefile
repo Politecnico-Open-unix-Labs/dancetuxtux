@@ -19,9 +19,9 @@ all: ${BUILD_DIR}/main.o ${BUILD_DIR}/capacitive.o ${BUILD_DIR}/capacitive_lowle
         ${BUILD_DIR}/timer_utils.o ${BUILD_DIR}/circular_buffer.o ${BUILD_DIR}/USB.o ${BUILD_DIR}
 	@ # Links all object files
 	${CC} ${LD_FLAGS} ${BUILD_DIR}'/timer_utils.o' ${BUILD_DIR}'/pin_utils.o' ${BUILD_DIR}'/capacitive.o' ${BUILD_DIR}'/circular_buffer.o' \
-	    ${BUILD_DIR}'/capacitive_lowlevel.o' ${BUILD_DIR}'/USBCore.o' ${BUILD_DIR}'/main.o' \
+	    -s ${BUILD_DIR}'/capacitive_lowlevel.o' ${BUILD_DIR}'/USBCore.o' ${BUILD_DIR}'/main.o' \
 	    -O${O_LEVEL} -o ${BUILD_DIR}'/'${OUT_NAME}'.elf'
-	# TODO: Strip the executable to reduce size
+	@ # NB: the executable is stripped to reduce size. You may remove -s option if ypu want to disable stripping
 	${OBJCOPY} -O ihex -j .eeprom --set-section-flags=.eeprom=alloc,load --no-change-warnings --change-section-lma .eeprom=0 \
 							   ${BUILD_DIR}'/'${OUT_NAME}'.elf' ${BUILD_DIR}'/'${OUT_NAME}'.eep'
 	${OBJCOPY} -O ihex -R .eeprom ${BUILD_DIR}'/'${OUT_NAME}'.elf' ${BUILD_DIR}'/'${OUT_NAME}'.hex'  # converts binary to readable text, containing HEX

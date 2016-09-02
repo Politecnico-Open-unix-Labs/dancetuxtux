@@ -1,7 +1,8 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#include <stdint.h> // uint8_t
+#define USE_ARDUINO_LED // Each keypress will light the Arduino led
+#define USE_PROGMEM
 
 #define INPUT_PIN_UP    8
 #define INPUT_PIN_DOWN  9
@@ -9,13 +10,29 @@
 #define INPUT_PIN_RIGHT 11
 
 // Do not change the name of the following variables
-// You should not include this file outside main.cpp
+// You should not include this file outside of main.cpp
+
+#ifdef USE_PROGMEM
+#    include <avr/pgmspace.h> // PROGMEM stuff
+#else
+#    ifdef PROGMEM
+#        undef PROGMEM
+#    endif
+#    define PROGMEM
+#endif
 
 // Array of input pins
-const uint8_t inputs[] = {INPUT_PIN_UP, INPUT_PIN_DOWN, INPUT_PIN_LEFT, INPUT_PIN_RIGHT};
-const uint8_t inputs_len = sizeof(inputs)/sizeof(*inputs); // number of inputs
+const uint8_t inputs[] PROGMEM = {INPUT_PIN_UP, INPUT_PIN_DOWN, INPUT_PIN_LEFT, INPUT_PIN_RIGHT};
+const uint8_t inputs_len PROGMEM = sizeof(inputs)/sizeof(*inputs); // number of inputs
 
-// TODO: array of calling functions
-// TODO: use progmem
+typedef void (*handler_t)(void); // Pointer to function rquiring no args and retuirning void
+const handler_t keypress_handlers[] PROGMEM = {&handler_UP_keypress  , &handler_DOWN_keypress ,
+                                               &handler_LEFT_keypress, &handler_RIGHT_keypress, };
+const handler_t keyrelease_handlers[] PROGMEM = {&handler_UP_keyrelease  , &handler_DOWN_keyrelease ,
+                                                 &handler_LEFT_keyrelease, &handler_RIGHT_keyrelease, };
+
+#ifndef USE_PROGMEM
+#    undef PROGMEM
+#endif
 
 #endif // CONFIG_H defined
