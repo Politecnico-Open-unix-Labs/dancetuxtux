@@ -145,6 +145,7 @@ typedef struct
 void __USB_init(void);
 void __USB_send_keypress(uint8_t key_code);
 void __USB_send_keyrelease(uint8_t key_code);
+void __USB_send_string(const uint8_t * msg);
 
 //	Descriptors
 

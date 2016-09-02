@@ -15,4 +15,7 @@ unsigned char check_port(uint8_t in);
 void set_threshold(uint8_t new_sens);
 uint8_t get_threshold(void);
 
+void init_capacitive_sensor(void); // TODO ...
+uint32_t capacitive_pressed(void); // TODO ...
+
 #endif // CAPACITIVE_H defined

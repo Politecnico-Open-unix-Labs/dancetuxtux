@@ -7,6 +7,7 @@
 #define USE_BINARY_BUFFER // define to enable binary buffer memory optimization (requires more computing power)
 
 #ifdef USE_BINARY_BUFFER
+#    include <limits.h> // CHAR_BIT
 #    define CIRCULAR_BUFFER_BUF_LEN(SAMPLES_NUM) ((SAMPLES_NUM + CHAR_BIT - 1)/CHAR_BIT) // Rounds up
 #else // not using binary buffer
 #    define CIRCULAR_BUFFER_BUF_LEN(SAMPLES_NUM) (SAMPLES_NUM) // One byte per sample

@@ -1,222 +1,219 @@
-/*
-    Capacitive low level functions
-    Copyright (C) 2016  Serraino Alessio
+#include <string.h>
+#include <stdint.h>
 
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
+#include "circular_buffer.h"
+#include "capacitive.h"
+#include "capacitive_settings.h"
 
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
+// Lenght of a buffer containing SAMPLES_NUM samples
+#define BUF_LEN CIRCULAR_BUFFER_BUF_LEN(SAMPLES_NUM)
+// TODO: put everything together in a single structure, one for eahc buffer
+uint8_t low_buffer_data[BUF_LEN];  // Actual buffer where data is stored
+uint8_t high_buffer_data[BUF_LEN]; // Actual buffer where data is stored
+circular_buffer_t low_buffer, high_buffer; // Buffer wrapper
+uint8_t high_threeshold, low_threeshold; // between 0 and 255
+uint8_t pin = 8; // TODO: correct initialization of this
+uint8_t to_probe = 1; // Single bit TODO: use bitfield
+uint8_t pressed = 0; // Single bit TODO: use bitfield
+uint32_t hysteresis = 0; // Avoid double press
+uint32_t gray_zone = 0; // TODO: initialize this in probe function; Time in spent gray zone
 
-    You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
+// TODO: pass buffer structure
+#define BUFFER_NONE 0x00
+#define BUFFER_HIGH 0x01
+#define BUFFER_LOW  0x02
+#define BUFFER_BOTH (BUFFER_LOW | BUFFER_HIGH)
+void fill_buffer(uint8_t wich_buffer) {
+    uint8_t i;
 
-#include <stdint.h> // uint8_t type
-#include <string.h> // memcpy
-#include <stddef.h> // NULL pointer
+    for (i = 0; i < SAMPLES_NUM; i++) { // performs enough readings to fill the buffer
+        if (wich_buffer & BUFFER_LOW) {
+            set_threshold(low_threeshold); // Low threeshold must read as 1
+            if (check_port(pin)) circular_buffer_push(low_buffer, 1);
+            else                 circular_buffer_push(low_buffer, 0);
+        }
 
-#include "cpu.h" // Almost all the needed to work with AVR controller
-#include "capacitive.h" // function defined in this code
-#include "pin_utils.h" // id_to_pin function
-#include "timer_utils.h" // many timer functions
-#include "capacitive_settings.h" // capacitive settings
+        if (wich_buffer & BUFFER_HIGH) {
+            set_threshold(high_threeshold); // Low threeshold must read as 0
+            if (check_port(pin)) circular_buffer_push(high_buffer, 1);
+            else                 circular_buffer_push(high_buffer, 0);
+        }
+    }
+}
 
-// Note: inline will not work between multiple files unless LTO is enabled (compile with -flto)
-static uint8_t portb_bitmask, portc_bitmask, portd_bitmask, portf_bitmask; // input bitmask (1 input, 0 no input)
-static uint8_t portb_used_mask, portc_used_mask, // automagic discharge when necessary
-               portd_used_mask, portf_used_mask;
-static uint8_t _threshold;
+void set_press_release_threeshold() {
+    uint8_t overflow; // In case of overflow sets min/max
+    overflow = low_threeshold;
+    low_threeshold -= RELEASE_THREESHOLD;
+    if (low_threeshold > overflow) // Underflow (below 0)
+        low_threeshold = 0;
+    overflow = high_threeshold;
+    high_threeshold += PRESS_THREESHOLD;
+    if (high_threeshold < overflow) // Overflowed
+        high_threeshold = UCHAR_MAX;
+}
 
-/* check pin low level function */
-static inline uint8_t check_pin(pin_t pin) __attribute__((always_inline));
+// +--- NB ---------------------------------------------+
+// |   increasing threeshold leads to more 0 readings   |
+// |   decreasing threeshold leads to more 1 readings   |
+// +----------------------------------------------------+
 
-void inint_inputs(const uint8_t inputs[], const uint8_t inputs_len)
-{
-    pin_t temp; // temporany, to switch pins
-    uint8_t i; // counter
+// TODO: pass buffer structures
+void adjust_interval() { // Moves threeshold up and down
+    uint8_t high_done, low_done; // counters
+    uint8_t high_dir, low_dir; // true if need to increase the threeshold
 
-    // Automatically sets up input ports bitmask
-    portb_bitmask = portc_bitmask = portd_bitmask = portf_bitmask = 0; // sets all to zero
-    for (i = 0; i < inputs_len; i++) { // for each input
-        temp = id_to_pin(inputs[i]);
-        if (temp.port == &PORTB)
-            portb_bitmask |= temp.bitmask;
-        if (temp.port == &PORTC)
-            portc_bitmask |= temp.bitmask;
-        if (temp.port == &PORTD)
-            portd_bitmask |= temp.bitmask;
-        if (temp.port == &PORTF)
-            portf_bitmask |= temp.bitmask;
+    // Preliminary fills the buffer
+    fill_buffer(BUFFER_BOTH);
+    if (circular_buffer_sum(low_buffer) <= SAMPLES_NUM*LOW_THREESHOLD) // must sum high
+        low_dir = 0; // Should decrease threeshold to get an higher sum (more 1s)
+    else
+        low_dir = 1; // Should increase threeshold
+
+    if (circular_buffer_sum(high_buffer) >= SAMPLES_NUM*HIGH_THREESHOLD) // must sum low
+        high_dir = 1; // Should increase threeshold to get a lower sum (more 0s)
+    else
+        high_dir = 0; // Should decrease threeshold
+
+    // Now phisically move the threesholds according to preliminary readings
+    high_done = low_done = 0;
+    while (!(low_done && high_done)) {
+        if (!low_done) {
+            // if probing threesholds increase
+            if (low_dir == 1) low_threeshold++;
+            if (low_dir == 0) low_threeshold--;
+        }
+        if (!high_done) {
+            // if probing threesholds decrease
+            if (high_dir == 1) high_threeshold++;
+            if (high_dir == 0) high_threeshold--;
+        }
+
+        // Now collect some samples from the sensor
+        fill_buffer((!low_done)*BUFFER_LOW | (!high_done)*BUFFER_HIGH);
+
+        if (!low_done) {
+            if (low_dir == 1) { // increasing low threeshold
+                if (circular_buffer_sum(low_buffer) <= SAMPLES_NUM*LOW_THREESHOLD) { // must sum high
+                    low_threeshold--; // low threeshold was too high, last stored was good
+                    low_done = 1; // do not probe low anymore
+                }
+            } else if (low_dir == 0) { // decreasing low threeshold
+                if (circular_buffer_sum(low_buffer) > SAMPLES_NUM*LOW_THREESHOLD) // must sum high
+                    low_done = 1; // satisfied, do not probe low anymore
+            }
+        } // end if low_done
+
+        if (!high_done) {
+            if (high_dir == 0) { // decreasing low threeshold
+                if (circular_buffer_sum(high_buffer) >= SAMPLES_NUM*HIGH_THREESHOLD) { // must sum low
+                    high_threeshold++; // high threeshold was too low
+                    high_done = 1; // do not probe high anymore
+                }
+            } else if (low_dir == 1) { // increasing low threeshold
+                if (circular_buffer_sum(high_buffer) < SAMPLES_NUM*HIGH_THREESHOLD) // must sum low
+                    high_done = 1; // do not probe high anymore
+            }
+        } // end if high_done
+
+    } // end while
+} // end function
+
+// TODO: pass capacitive pin structure
+void probe(void) { // Probes threeshold
+    uint8_t lowest_high, highest_low; // highest and lowest reached by each threeshold
+    uint8_t swap; // temporany
+    uint32_t times;
+
+    // Sets a General starting point, you can change it if you think performance will benefit
+    // However this settings should not change the final output
+    lowest_high = UCHAR_MAX; // Maximum
+    highest_low = 0; // Minum
+    high_threeshold = UCHAR_MAX*3/4;
+    low_threeshold = UCHAR_MAX*1/4;
+
+    // The first part of the algorithm is intented to give only an approximation onf the final result
+    times = 0;
+    while ((high_threeshold > (low_threeshold + 1)) && (times < MAX_PROBE_STEPS)) {
+        times++;
+        set_threshold(low_threeshold); // Low threeshold must read as 1
+        if (check_port(pin)) { // Read correct value, tries increasing
+            highest_low = low_threeshold;
+            low_threeshold += (high_threeshold - low_threeshold) / 2;
+        } else { // Read wrong value, tries decreasing
+            low_threeshold = (low_threeshold + highest_low) / 2; // average, rounded down
+        }
+
+        set_threshold(high_threeshold); // High threeshold must read as 0
+        if (check_port(pin)) { // Read wrong value, tries decreasing
+            high_threeshold = (high_threeshold + lowest_high + 1) / 2; // average, rounded up
+        } else { // Read correct value, tries increasing
+            lowest_high = high_threeshold;
+            high_threeshold += (high_threeshold - low_threeshold) / 2;
+        }
+
+        if (high_threeshold <= low_threeshold) {
+            swap = (low_threeshold - high_threeshold + 1) / 2; // high, roundup
+            low_threeshold  = (low_threeshold - high_threeshold - 1) / 2; // low, rounddown
+            high_threeshold = swap; // because first operation changes data the second uses
+        }
     }
 
-    set_threshold(START_THRESHOLD);
-    discharge_ports(); // complete the setup by making ports readable
+    adjust_interval(); // Now fine adjusting
+    set_press_release_threeshold(); // Now sets some sensibility
+    to_probe = 0;
 }
 
-void set_threshold(uint8_t new_sens) { _threshold = new_sens; }
-uint8_t get_threshold(void) { return _threshold; }
+// TODO: pass capacitive pin structure
+// Here is done all the Inttelligent work. This function checks the history buffers
+// to say wether the key was pressed or not.
+uint32_t capacitive_pressed() {
+    uint8_t temp;
 
-void discharge_ports(void)
-{
-    // Write 0 on the keyboard pins
-    PORTB &= ~(portb_bitmask);
-    PORTC &= ~(portc_bitmask);
-    PORTD &= ~(portd_bitmask);
-    PORTF &= ~(portf_bitmask);
-    _MemoryBarrier();
-
-    // and make output the input (to remove internal resistance)
-    DDRB |= portb_bitmask;
-    DDRC |= portc_bitmask;
-    DDRD |= portd_bitmask;
-    DDRF |= portf_bitmask;
-    _MemoryBarrier();
-
-    // wait some time, this way the capacitor connected get discharged
-    _delay_us(DISCHARGE_TIME);
-
-    // ports are now usable
-    portb_used_mask = portc_used_mask = portd_used_mask = portf_used_mask = 0;
-    _MemoryBarrier();
-}
-
-uint8_t check_port(uint8_t in)
-{
-    pin_t pin; // comfortable pin structure
-    uint8_t ret_val; // return value
-    uint8_t old_SREG; // to store interrupt configuration
-    uint8_t * tmp_bitmask, * tmp_used_bitmask;
-
-    pin = id_to_pin(in); // Gets an usable pin data structure
-
-    // Safety code: check the pin is enabled for capacitive
-    if (pin.port == &PORTB) {
-        tmp_bitmask = &portb_bitmask;
-        tmp_used_bitmask = &portb_used_mask;
-    } else if (pin.port == &PORTC) {
-        tmp_bitmask = &portc_bitmask;
-        tmp_used_bitmask = &portc_used_mask;
-    } else if (pin.port == &PORTD) {
-        tmp_bitmask = &portd_bitmask;
-        tmp_used_bitmask = &portd_used_mask;
-    } else if (pin.port == &PORTF) {
-        tmp_bitmask = &portf_bitmask;
-        tmp_used_bitmask = &portf_used_mask;
-    } else { // Should never happen
-        tmp_bitmask = NULL; // This will lead to an error
-        tmp_used_bitmask = NULL;
+    if (to_probe) {
+        probe(); // Probe function will automatically fill buffer
+        to_probe = 0;
+        gray_zone = 0; // no more in grayzone
     }
 
-    if ((tmp_bitmask == NULL) // pin does not exists
-            || !(*tmp_bitmask & pin.bitmask)) // pin not enabled
-        return -1; // Cannot use this port for capacitive sensor, error
+    fill_buffer(BUFFER_BOTH); // Fills buffer of readings
 
-    // Now check if can read the port
-    if ((tmp_used_bitmask == NULL) // This check might be unuseful
-            || (*tmp_used_bitmask & pin.bitmask)) // if port was used
-        discharge_ports(); // Cannot read data after use without a prior reset
-                           // so reset here
-
-    // Now we are ready to actually read
-    _MemoryBarrier();
-    old_SREG = SREG; // Stores interrupt configuration
-    SREG = 0; // disables interrupts for a while
-
-    ret_val = check_pin(pin); // time critical section, readng
-
-    SREG = old_SREG; // re-enable interrupts (if enabled)
-
-    // marks the port as used
-    if (tmp_used_bitmask != NULL)
-        *tmp_used_bitmask |= pin.bitmask;
-
-    return !!ret_val; // binary return, or 1, or 0
-}
-
-// ====== ALL THE 'HARD WORK' IS DONE HERE ======
-
-// N.B. _MemoryBarrier function forces r/w to follow the order. It should not slow down execution
-#define CAP_CHARGHE(_pin) do {                                                                                      \
-    _MemoryBarrier();                                                                                               \
-    *(_pin.ddr) &= ~(_pin.bitmask); /* Make the port an input (connect internal resistor) */                        \
-    _MemoryBarrier();                                                                                               \
-    *(_pin.port) |= _pin.bitmask; /* writes 1 on the pin (port is a pull-up). Capacitor charging starts now */      \
-    _MemoryBarrier();                                                                                               \
-} while (0)
-
-/* Performs the reading */
-#define CAP_READ(_pin) (*(_pin.pin) & _pin.bitmask) //  N.B Keep _pin on the local stack, this way gains in speed
-
-/* discharge port, it is important to leave the pis low if you want to do multiple readings
-   discharge port function should do the same thing on all the pins, but it is safer to do it just after reading */
-#define CAP_DISCHARGHE(_pin) do {                                                                                  \
-    _MemoryBarrier(); /* WARNING: Keep the order of the following two */                                            \
-    *(_pin.port) &= ~(_pin.bitmask); /* wirtes 0 */                                                                 \
-    _MemoryBarrier();                                                                                               \
-    *(_pin.ddr) |= _pin.bitmask; /* port is now an output (disconnect internal resistor) */                         \
-    _MemoryBarrier();                                                                                               \
-} while (0)
-
-// Actual implementation
-#define CAP_HARD_WORK(pin, delay) do {                                                                              \
-    uint8_t read, _count = _threshold / 3;                                                                          \
-    pin_t temp;  /* Needet to keep a copy of param on local stack. This way gains a faster access */                \
-    memcpy(&temp, &pin, sizeof(pin)); /* DO NOT REMOVE THIS, faster access is necessary for fast reading */         \
-    CAP_CHARGHE(temp);                                                                                              \
-    __builtin_avr_delay_cycles(delay);  /* Waits some nops */                                                       \
-    _delay_loop_1(_count); /* waits the rest of the time. Each loop requires 3 instructions */                      \
-    read = CAP_READ(temp); /* here local stack reduces asm overhead, i.e. overhead is only given by loops */        \
-    CAP_DISCHARGHE(temp);                                                                                           \
-    return !read;                                                                                                   \
-} while (0)
-
-#define CAP_HARD_WORK_NO_LOOP(pin, delay) do {                                                                      \
-    uint8_t read;                                                                                                   \
-    pin_t temp;  /* Needet to keep a copy of param on local stack. This way gains a faster access */                \
-    memcpy(&temp, &pin, sizeof(pin)); /* DO NOT REMOVE THIS, faster access is necessary for fast reading */         \
-    CAP_CHARGHE(pin);                                                                                               \
-    __builtin_avr_delay_cycles(delay);  /* Waits some nops */                                                       \
-    read = CAP_READ(temp); /* here local stack reduces asm overhead, i.e. overhead is only given by loops */        \
-    CAP_DISCHARGHE(pin);                                                                                            \
-    return !read;                                                                                                   \
-} while (0)
-
-// Do not inline the following function !!! They work because the compiler will not mix their code with the rest
-__attribute__((noinline)) static uint8_t hard_work_0(pin_t pin) { CAP_HARD_WORK(pin, 0); }
-__attribute__((noinline)) static uint8_t hard_work_1(pin_t pin) { CAP_HARD_WORK(pin, 1); }
-__attribute__((noinline)) static uint8_t hard_work_2(pin_t pin) { CAP_HARD_WORK(pin, 2); }
-__attribute__((noinline)) static uint8_t hard_work_no_loop_0(pin_t pin) { CAP_HARD_WORK_NO_LOOP(pin, 0); }
-__attribute__((noinline)) static uint8_t hard_work_no_loop_1(pin_t pin) { CAP_HARD_WORK_NO_LOOP(pin, 1); }
-__attribute__((noinline)) static uint8_t hard_work_no_loop_2(pin_t pin) { CAP_HARD_WORK_NO_LOOP(pin, 2); }
-
-// Implements three times the function, each time with a different delay
-static inline // this function may be inlined
-uint8_t check_pin(pin_t pin) {
-    uint8_t read;
-    uint8_t _algorithm = _threshold % 3;
-
-    if (_threshold < 3) { //tis implies (_threshold / 3) == 0, that will cause '_count' starts from 0.
-        // when calling _delay_loop_1 with 0 parameter it will actually loops 256 times
-        // So the solution is to not call the _delay_loop_1 when it will cause a bug
-        if (_algorithm == 0) // Use algorithm 0
-            read = hard_work_no_loop_0(pin);
-        else if (_algorithm == 1) // Yses algorithm 1
-            read = hard_work_no_loop_1(pin);
-        else if (_algorithm == 2) // Yses algorithm 2
-            read = hard_work_no_loop_2(pin);
+    temp = circular_buffer_sum(low_buffer);
+    if (temp <= SAMPLES_NUM*(0.10)) { // Key release, sends keyrelease and probes again
+        hysteresis++;
+        if (hysteresis > HYSTERESIS) { // Actually send keyrelease
+            pressed = 0;
+            to_probe = 1;
+            gray_zone = 0;
+            hysteresis = 0;
+        }
+    } else if (temp <= SAMPLES_NUM*LOW_THREESHOLD) {
+        gray_zone++; // it is not a keypress, but it is near to a keypress
+        if (gray_zone >= MAX_TIME_IN_GRAYZONE) // Spent too many time in grayzone, request re-probe without sending keypress
+            to_probe = 1;
     } else {
-        if (_algorithm == 0) // Use algorithm 0
-            read = hard_work_0(pin);
-        else if (_algorithm == 1) // Yses algorithm 1
-            read = hard_work_1(pin);
-        else if (_algorithm == 2) // Yses algorithm 2
-            read = hard_work_2(pin);
+        gray_zone = 0;
     }
 
-    return read;
+    temp = circular_buffer_sum(high_buffer);
+    if (temp >= SAMPLES_NUM*(0.90)) { // Key press, send kaypress and probes again sensibility
+        pressed = 1;
+        hysteresis = 0;
+        to_probe = 1;
+        gray_zone = 0;
+    } else if (temp >= SAMPLES_NUM*HIGH_THREESHOLD) { // gray_zone
+        gray_zone++; // it is not a keypress, but it is near to a keypress
+        if (gray_zone >= MAX_TIME_IN_GRAYZONE) // Spent too many time in grayzone, request re-probe without sending keypress
+            to_probe = 1;
+    } else { // Everything normal
+        gray_zone = 0;
+    }
+
+    return pressed;
+}
+
+void init_capacitive_sensor(void) {
+    circular_buffer_init(low_buffer , low_buffer_data , SAMPLES_NUM);
+    circular_buffer_init(high_buffer, high_buffer_data, SAMPLES_NUM);
+    probe(); // chooses correct threeshold
 }

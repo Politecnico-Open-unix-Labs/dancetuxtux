@@ -598,3 +598,26 @@ void __USB_send_keyrelease(uint8_t key_code) {
     if (i != len) // If not reached the end
         __SendReport(2, report, sizeof(report));
 }
+
+// DEBUG PURPOSE
+#ifndef NDEBUG
+
+static int __ascii_to_usb(const uint8_t ch) {
+    if (ch >= 'A' && ch <= 'Z') return ch - 'A' + 0x04; // Uppercase
+    if (ch >= 'a' && ch <= 'z') return ch - 'a' + 0x04; // Lowercase
+    if (ch >= '0' && ch <= '9') { if (ch == '0') return 0x27; else return ch - '1' + 0x1e;} // Digit
+    if (ch == ' ') return 0x2c;
+	// Etc...
+    return 0x00;
+}
+
+void __USB_send_string(const uint8_t * msg) {
+    uint8_t i = 0;
+    while (msg[i]) {
+        __USB_send_keypress(__ascii_to_usb(msg[i]));
+        __USB_send_keyrelease(__ascii_to_usb(msg[i]));
+        i++;
+    }
+}
+
+#endif // NDEBUG defined
