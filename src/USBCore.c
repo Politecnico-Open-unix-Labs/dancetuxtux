@@ -540,22 +540,37 @@ ISR(USB_GEN_vect) {
 //=======================================================================
 uint8_t report[8];
 
+// This fixes many problems with USB and Timers
+void __USB_Clear_interrupt_flags(void) {
+    USBINT = 0;
+    UDINT  = 0;
+    // For each endpoint
+    for (uint8_t _i = 0; _i < 6; _i++) {
+        SetEP(_i); 
+        UEINTX = UEIENX = 0; // Clears all interrupt flags
+    }   
+}
+
+
 void __USB_init(void) {
+    __USB_Clear_interrupt_flags(); // Clears all prior inputs. Fixes a bug after board reset
     sei(); // Enables interrupts
-	_usbConfiguration = 0;
-	_usbCurrentStatus = 0;
-	_usbSuspendState = 0;
-	USB_ClockEnable();
+    
+    _usbConfiguration = 0;
+    _usbCurrentStatus = 0;
+    _usbSuspendState = 0;
+    USB_ClockEnable();
 
-	UDINT &= ~((1<<WAKEUPI) | (1<<SUSPI)); // clear already pending WAKEUP / SUSPEND requests
-	UDIEN = (1<<EORSTE) | (1<<SOFE) | (1<<SUSPE);	// Enable interrupts for EOR (End of Reset), SOF (start of frame) and SUSPEND
+    UDINT &= ~((1<<WAKEUPI) | (1<<SUSPI)); // clear already pending WAKEUP / SUSPEND requests
+    UDIEN = (1<<EORSTE) | (1<<SOFE) | (1<<SUSPE);	// Enable interrupts for EOR (End of Reset), SOF (start of frame) and SUSPEND
 
-	TX_RX_LED_INIT;
+    TX_RX_LED_INIT;
 
-	_initEndpoints[4] = EP_TYPE_INTERRUPT_IN;
-	memset(report, 0, sizeof(report)); // sets all of the report to zero
-	while (usb_init_done == 0) { _delay_ms(1); } // Waits one millisecond before each test
-	_delay_ms(250); // Delays further time
+    _initEndpoints[4] = EP_TYPE_INTERRUPT_IN;
+    memset(report, 0, sizeof(report)); // sets all of the report to zero
+    while (usb_init_done == 0) { _delay_ms(1); } // Waits one millisecond before each test
+    _delay_ms(250); // Delays further interrupts
+    __USB_Clear_interrupt_flags(); // Clears all prior inputs. Fixes a bug after board reset
 }
 
 int __SendReport(uint8_t id, const void* data, int len) {

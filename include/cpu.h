@@ -12,6 +12,8 @@
 #ifndef _BV // if not defined, define one itself
 #    define _BV(bit) (1 << (bit))
 #endif
+#include <avr/power.h> // Powersaver functions
+#include <avr/sleep.h>
 #include <util/delay.h> // delay_us
 #include <util/delay_basic.h>
 #include <util/atomic.h>

@@ -25,6 +25,16 @@
 const uint8_t inputs[] PROGMEM = {INPUT_PIN_UP, INPUT_PIN_DOWN, INPUT_PIN_LEFT, INPUT_PIN_RIGHT};
 const uint8_t inputs_len PROGMEM = sizeof(inputs)/sizeof(*inputs); // number of inputs
 
+// Must delcare functions before using
+void handler_UP_keypress(void);       // All of those functions
+void handler_DOWN_keypress(void);     // Must be defined inside the main program
+void handler_LEFT_keypress(void);
+void handler_RIGHT_keypress(void);
+void handler_UP_keyrelease(void);
+void handler_DOWN_keyrelease(void);
+void handler_LEFT_keyrelease(void);
+void handler_RIGHT_keyrelease(void);
+
 typedef void (*handler_t)(void); // Pointer to function rquiring no args and retuirning void
 const handler_t keypress_handlers[] PROGMEM = {&handler_UP_keypress  , &handler_DOWN_keypress ,
                                                &handler_LEFT_keypress, &handler_RIGHT_keypress, };

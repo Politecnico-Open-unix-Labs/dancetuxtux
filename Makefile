@@ -11,7 +11,7 @@ OBJCOPY=avr-objcopy
 LANG_STD=gnu11
 O_LEVEL=2 # -O3 may break something
 CC_FLAGS=-mmcu=atmega32u4 -flto -ffast-math -Wall -Werror -Wfatal-errors
-LD_FLAGS=-mmcu=atmega32u4 -fPIC -flto -fwhole-program -Wl,-emain
+LD_FLAGS=-mmcu=atmega32u4 -fuse-linker-plugin -flto -fwhole-program -Wl,-emain
 PORT=/dev/ttyACM0 # Port to use if no other port was found
 OUT_NAME=dancetuxtux# Output names
 

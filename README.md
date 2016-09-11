@@ -3,12 +3,14 @@ What's this?
 This is a controller for the videogame Stepmania. You need an Arduino-compatible
 board to run this software. You may also need a board, see the instructions below
 to build one yourself.
+
 Unfortunately not all Arduino boards are supported at the moment. Only the Arduno
 Leonardo is suitable for this software right now.
 You need to connect your Arduino to your computer via standard USB cable, using the
 defaul port on the Arduino. This controller will act as a keyboard. Stepmania works
 well with keyboard inputs. There are only four inputs: Arrow Key Up, Down, Left and
 Right.
+
 NOTE: This board will act as a keyboard even with other programs, so if you leave
 the board connected to your computer when other programs are running you may get
 undesidered inputs (only the four arrow keys), and it might conflict with your
@@ -59,8 +61,8 @@ TODO:
 
 Ordered by priority
 
-1. Timer Utils function, to interact easily with timers
-2. Flexible Timer time measurment
+1. <del>Timer Utils function, to interact easily with timers<del>
+2. <del>Flexible Timer time measurment<del>
 3. <del>Keypress/Keyrelease event dialing</del>
 4. <del>All the USB stuff, this will re-use many of the Arduino code</del>
 ..* <del>Get a working USB communication</del>
