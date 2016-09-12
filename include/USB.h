@@ -142,6 +142,8 @@ typedef struct
 #define EP_TYPE_INTERRUPT_OUT		((1<<EPTYPE1) | (1<<EPTYPE0))
 #define EP_TYPE_ISOCHRONOUS_IN		((1<<EPTYPE0) | (1<<EPDIR))
 #define EP_TYPE_ISOCHRONOUS_OUT		(1<<EPTYPE0)
+void __USB_power_enable();
+void __USB_power_disable();
 void __USB_Clear_interrupt_flags(void);
 void __USB_init(void);
 void __USB_send_keypress(uint8_t key_code);

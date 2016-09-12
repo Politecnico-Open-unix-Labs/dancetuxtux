@@ -2,7 +2,7 @@
 #define CONFIG_H
 
 #define USE_ARDUINO_LED // Each keypress will light the Arduino led
-#define USE_PROGMEM
+#define USE_PROGMEM // Store globals inside executable flash rather than RAM
 
 #define INPUT_PIN_UP    8
 #define INPUT_PIN_DOWN  9
@@ -18,7 +18,7 @@
 #    ifdef PROGMEM
 #        undef PROGMEM
 #    endif
-#    define PROGMEM
+#    define PROGMEM // Defines progmem to do nothing!
 #endif
 
 // Array of input pins
@@ -35,6 +35,9 @@ void handler_DOWN_keyrelease(void);
 void handler_LEFT_keyrelease(void);
 void handler_RIGHT_keyrelease(void);
 
+// Function Handlers. Each time an event is detected on the pin the correspunding handler is called
+// N.B. Order is important! Different order will associate different handlers to different pins
+// You can set some handler to NULL if you don't want any function call for that event
 typedef void (*handler_t)(void); // Pointer to function rquiring no args and retuirning void
 const handler_t keypress_handlers[] PROGMEM = {&handler_UP_keypress  , &handler_DOWN_keypress ,
                                                &handler_LEFT_keypress, &handler_RIGHT_keypress, };

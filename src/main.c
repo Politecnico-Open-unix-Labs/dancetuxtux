@@ -40,6 +40,8 @@
 #define KEY_RIGHT_ARROW   79
 
 #include <avr/interrupt.h> // ISR macro
+#include <avr/power.h> // Powersaving functions
+#include <avr/sleep.h> // CPU Sleep modes (powersave)
 
 #include "config.h" // Necessary configuration file (needs function definition)
 
@@ -99,38 +101,80 @@ CREATE_RELEASE_HANDLER(RIGHT);
 // =============================
 
 #include <alloca.h>
-int get_free_ram(void) {
+static inline int get_free_ram(void) {
     extern int __heap_start, *__brkval;
     uint8_t * v = alloca(sizeof(uint8_t)); // Allocates a sinlge byte on the top of the stack
     return (int)v - (__brkval == 0 ? (int) &__heap_start : (int) __brkval);
 }
 
+// Global timer status
 volatile uint8_t has_timer_ticked = 0;
 volatile uint8_t is_executing = 0;
+
 ISR(TIMER0_COMPA_vect) {
     if (is_executing == 0) // Timer ticks only if execution has finished
         has_timer_ticked = 1;
     // else handle the error (increase delay)
 }
 
-int main(void) {
+__attribute__((noreturn)) // This function never ends
+void fatal_error(void) {
+    // Makes arduino led blink fast, forever.
+    ARDUINO_LED_INIT();
+    while (1) {
+        ARDUINO_LED_ON();
+        _delay_ms(100);
+        ARDUINO_LED_OFF();
+        _delay_ms(100);
+    }
+    __builtin_unreachable();
+}
+
+__attribute__((always_inline)) static inline // Forces function inlining
+void main_loop(capacitive_sensor_t * sensors) {
     uint8_t stat, i; // status of sensors, counter
+    handler_t handler; // Temporany handler function pointer
+    
+    _MemoryBarrier();
+    is_executing = 1; // Now execution starts
+    _MemoryBarrier(); // Forces order
+    
+    stat = capacitive_sensor_pressed(sensors, inputs_len); // Input len is a global
+    for (i = 0; i < inputs_len; i++) {
+        if (stat & _BV(i)) // pressed the i-th key
+#ifdef USE_PROGMEM
+            handler = pgm_read_ptr_near(keypress_handlers + i); // Retreive from progmem
+#else
+            handler = keypress_handlers[i]; // Retreive from normal array
+#endif
+        else
+#ifdef USE_PROGMEM
+            handler = pgm_read_ptr_near(keyrelease_handlers + i);
+#else
+            handler = keyrelease_handlers[i];
+#endif
+
+        if (handler != NULL) // If event handler is configuered
+            handler(); // Executes the event handler
+    }
+    
+    _MemoryBarrier(); // Forces order
+    is_executing = 0; // Main loop execution finished
+    _MemoryBarrier();
+}
+
+int main(void) {
+    uint8_t timer_comparator = 64; // Increase to increase time
     capacitive_sensor_t sensors[inputs_len]; // One for each input
-    handler_t temp; // Pointer to the function to execute
 
     cli();
-    if (get_free_ram() < 2048) {
-        // Makes arduino led blink fast, forever
-        ARDUINO_LED_INIT();
-        while (1) {
-            ARDUINO_LED_ON();
-            _delay_ms(100);
-            ARDUINO_LED_OFF();
-            _delay_ms(100);
-        }
-    }
+    power_all_disable(); // Disables every device (saving power)
+
+    if (get_free_ram() <= 2048) // If static variables uses too mutch memory
+        fatal_error(); // Making the execution going on might have unfunny consequences  
 
     // Now does all the initializations
+    __USB_power_enable(); // Switches on USB
     __USB_init(); // Automatically do all the needed to init usb
 #ifdef USE_PROGMEM
     capacitive_sensor_inits_P(sensors, inputs, inputs_len); // Calls the PROGMEM version
@@ -144,45 +188,45 @@ int main(void) {
     cli();
 
     // Now configures and starts the timer
-    uint8_t new_comp = 64; // Increase to increase time
-    timer_enable(TIMER_ID_0); // enables the timer, this way it can start
+    timer_enable(TIMER_ID_0); // enables the timer, this way it can start when done
     timer_init(TIMER_ID_0, // Timer settings
                TIMER_SOURCE_CLK_1024, // Sets cpu clock / 1024 tick frequency
                TIMER_MODE_CTC, // When reaches Compare A resets
                OUT_MODE_NORMAL_A, // Not used (leaves output port as it is)
                OUT_MODE_NORMAL_B); // Not used (leaves output port as it is)
-    timer0_compare(TIMER_COMP_A, &new_comp); // sets compare A
+    timer0_compare(TIMER_COMP_A, &timer_comparator); // sets compare A
     timer_init_interrupt(TIMER_ID_0, TIMER_INTERRUPT_MODE_OCIA); // This enables interrupt, on compare A
     // Comparator is 64, Clock prescaler is 1024
     // 64*1024 = 65536 clock cycles between two consecutive calls. At 16Mhz it is about 4ms
 
     timer_start(TIMER_ID_0); // Now starts the timer!
+
+    if (!timer_going(TIMER_ID_0)) { // It should never happen
+        __USB_power_disable();
+        timer_disable(TIMER_ID_0);
+        fatal_error();
+    }
+
     sei(); // Re-enables interrupts
     
     _MemoryBarrier();
     has_timer_ticked = 0;
     while (1) {
-        is_executing = 1; // Now execution starts
-        _MemoryBarrier();
-        stat = capacitive_sensor_pressed(sensors, inputs_len);
-        for (i = 0; i < inputs_len; i++) {
-            if (stat & _BV(i)) // pressed the i-th key
-                temp = pgm_read_ptr_near(keypress_handlers + i);
-            else
-                temp = pgm_read_ptr_near(keyrelease_handlers + i);
+        // Main loop, where capacitive is done!
+        main_loop(sensors); // N.B. sensors is a pointer
 
-            if (temp != NULL) // Now executes the function
-                temp();
-        }
-        _MemoryBarrier();
         // Interrupts should now be enabled, but for security re-enables again
         sei(); // Enables interrupts. We need interrupts to handle timers
-        is_executing = 0; // Main loop execution finished
-        _MemoryBarrier();
         
         // Now buisy wait until the timer ticks
-        while (has_timer_ticked == 0)
-            __builtin_avr_delay_cycles(1); // Delays some nops (you may change it)
+        while (has_timer_ticked == 0) {
+            set_sleep_mode(SLEEP_MODE_IDLE); // Idle mode does not disable any interrupt
+            sleep_enable(); // Enables the selected sleep mode
+            sleep_mode(); // Control blocks here until an interrupt is executed
+            sleep_disable(); // Control resumes here. It is important it is immediately after sleep_mode
+            _MemoryBarrier();
+            __builtin_avr_delay_cycles(64); // Delays some cycles (you may change it), this way calls the ISR
+        }
         _MemoryBarrier(); // Forces next operation to be executed after
         has_timer_ticked = 0; // Resets
     }

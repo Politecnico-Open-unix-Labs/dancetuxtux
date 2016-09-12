@@ -538,7 +538,7 @@ ISR(USB_GEN_vect) {
 
 //=======================================================================
 //=======================================================================
-uint8_t report[8];
+uint8_t report[8]; // Global, current status of the keys
 
 // This fixes many problems with USB and Timers
 void __USB_Clear_interrupt_flags(void) {
@@ -636,3 +636,12 @@ void __USB_send_string(const uint8_t * msg) {
 }
 
 #endif // NDEBUG defined
+
+#include <avr/power.h> // Powersave functions
+void __USB_power_enable(void) {
+    power_usb_enable();
+}
+
+void __USB_power_disable(void) {
+    power_usb_disable();
+}

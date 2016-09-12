@@ -30,6 +30,8 @@
 #include "cpu.h" // processor adress registers
 #include "timer_utils.h" // timer defines
 
+#include <avr/power.h> // power enable/disable timers
+
 // This function works as follow:
 // For each bit, if relative bitmask bit is 1 then is set to first not used new_val
 // Else, if relative bitmask is 0, bit it is left untouched
@@ -210,12 +212,13 @@ void timer_init_interrupt(const uint8_t timer_id, const uint8_t interrupt_mode) 
 
 void timer_start(uint8_t timer_id) {
     uint8_t timer_source_tmp;
+    // TODO: check the timer is not already running
     if (timer_id == TIMER_ID_0) { // Timer 0
         // Sets the source, this way the timer starts
         timer_source_tmp = timer0_source;
-        timer0_source = -1; // timer is running
-        if (timer_source_tmp == TIMER_SOURCE_NONE)
-            TCCR0B |= _BV(2)*0 + _BV(1)*0 + _BV(0)*0;
+        timer0_source = TIMER_USE_DEFAULT; // timer is now running
+        if (timer_source_tmp == TIMER_SOURCE_NONE) // Timer is actually stopped
+            TCCR0B |= _BV(2)*0 + _BV(1)*0 + _BV(0)*0; // TODO: signal the error here!
         else if (timer_source_tmp == TIMER_SOURCE_CLK)
             TCCR0B |= _BV(2)*0 + _BV(1)*0 + _BV(0)*1;
         else if (timer_source_tmp == TIMER_SOURCE_CLK_8)
@@ -241,11 +244,12 @@ void timer_start(uint8_t timer_id) {
 
 void timer_stop(uint8_t timer_id) {
     uint8_t mode;
+    // TODO: check the timer is not stopped
     if (timer_id == TIMER_ID_0) {
         // simply clears the source bit
         mode = TCCR0B & (_BV(2) | _BV(1) | _BV(0)); // Gets the status
         if (mode == 0x00)
-            mode = TIMER_SOURCE_NONE;
+            mode = TIMER_SOURCE_NONE; // Timer stopped
         else if (mode == 0x01)
             mode = TIMER_SOURCE_CLK;
         else if (mode == 0x02)
@@ -269,15 +273,37 @@ void timer_stop(uint8_t timer_id) {
     }
 }
 
+uint8_t timer_going(uint8_t timer_id) {
+    if (timer_id == TIMER_ID_0)
+        return timer0_source == TIMER_USE_DEFAULT;
+    else if (timer_id == TIMER_ID_1)
+        return timer1_source == TIMER_USE_DEFAULT;
+    else if (timer_id == TIMER_ID_3)
+        return timer3_source == TIMER_USE_DEFAULT;
+    else // Invalid timer
+        return (uint8_t)(-1);
+}
+
 // ===============================
 // ===   POWERSAVE FUNCTIONS   ===
 // ===============================
 
 void timer_enable(uint8_t timer_id) {
-    // TODO: this
+    if (timer_id == TIMER_ID_0)
+        power_timer0_enable();
+    else if (timer_id == TIMER_ID_1)
+        power_timer1_enable();
+    else if (timer_id == TIMER_ID_3)
+        power_timer3_enable();
 }
-void timer_disable(uint8_t timer_id) {
 
+void timer_disable(uint8_t timer_id) {
+    if (timer_id == TIMER_ID_0)
+        power_timer0_disable();
+    else if (timer_id == TIMER_ID_1)
+        power_timer1_disable();
+    else if (timer_id == TIMER_ID_3)
+        power_timer3_disable();
 }
 
 // ==============================================================================

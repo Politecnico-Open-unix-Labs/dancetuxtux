@@ -19,6 +19,7 @@
 #define TIMER_COMP_B ((uint8_t)0x11)
 #define TIMER_COMP_C ((uint8_t)0x12)
 
+// This code must be different from any timer configuration
 #define TIMER_USE_DEFAULT ((uint8_t)0xff) // -1
 
 // Timer input soruces
@@ -64,6 +65,7 @@ void timer_init_interrupt(uint8_t timer_id, uint8_t interrupt_mode);
 // ===== TIMER CONTROLS =====
 void timer_start(uint8_t timer_id); // immediately starts the timer (no computations if timer_id is compile-time constant)
 void timer_stop(uint8_t timer_id); // immediately stops the timer (no computations if timer_id is compile-time constant)
+uint8_t timer_going(uint8_t timer_id); // 1 if the timer is going, 0 if it is stopped
 void timer_enable(uint8_t timer_id); // enables the timer, this way it can start
 void timer_disable(uint8_t timer_id); // disables the timer, this way saves energy
 
