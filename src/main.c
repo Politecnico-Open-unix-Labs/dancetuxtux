@@ -111,7 +111,7 @@ static inline int get_free_ram(void) {
 volatile uint8_t has_timer_ticked = 0;
 volatile uint8_t is_executing = 0;
 
-ISR(TIMER0_COMPA_vect) {
+ISR(TIMER1_COMPA_vect) {
     if (is_executing == 0) // Timer ticks only if execution has finished
         has_timer_ticked = 1;
     // else handle the error (increase delay)
@@ -164,7 +164,7 @@ void main_loop(capacitive_sensor_t * sensors) {
 }
 
 int main(void) {
-    uint8_t timer_comparator = 64; // Increase to increase time
+    uint16_t timer_comparator = 64; // Increase to increase time
     capacitive_sensor_t sensors[inputs_len]; // One for each input
 
     cli();
@@ -188,22 +188,21 @@ int main(void) {
     cli();
 
     // Now configures and starts the timer
-    timer_enable(TIMER_ID_0); // enables the timer, this way it can start when done
-    timer_init(TIMER_ID_0, // Timer settings
+    timer_enable(TIMER_ID_1); // enables the timer, this way it can start when done
+    timer_init(TIMER_ID_1, // Timer settings
                TIMER_SOURCE_CLK_1024, // Sets cpu clock / 1024 tick frequency
-               TIMER_MODE_CTC, // When reaches Compare A resets
-               OUT_MODE_NORMAL_A, // Not used (leaves output port as it is)
-               OUT_MODE_NORMAL_B); // Not used (leaves output port as it is)
-    timer0_compare(TIMER_COMP_A, &timer_comparator); // sets compare A
-    timer_init_interrupt(TIMER_ID_0, TIMER_INTERRUPT_MODE_OCIA); // This enables interrupt, on compare A
+               TIMER_MODE_CTC_OCR, // When reaches Compare A resets
+               OUT_MODE_NORMAL_A | OUT_MODE_NORMAL_B); // Not used output
+    timer_init_interrupt(TIMER_ID_1, TIMER_INTERRUPT_MODE_OCIA); // This enables interrupt, on compare A
+    timer1_compare(TIMER_COMP_A, &timer_comparator); // sets compare A
     // Comparator is 64, Clock prescaler is 1024
     // 64*1024 = 65536 clock cycles between two consecutive calls. At 16Mhz it is about 4ms
 
-    timer_start(TIMER_ID_0); // Now starts the timer!
+    timer_start(TIMER_ID_1); // Now starts the timer!
 
-    if (!timer_going(TIMER_ID_0)) { // It should never happen
+    if (!is_timer_running(TIMER_ID_1)) { // It should never happen
         __USB_power_disable();
-        timer_disable(TIMER_ID_0);
+        timer_disable(TIMER_ID_1);
         fatal_error();
     }
 

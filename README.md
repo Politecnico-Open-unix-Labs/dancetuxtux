@@ -65,14 +65,14 @@ Ordered by priority
 2. <del>Flexible Timer time measurment<del>
 3. <del>Keypress/Keyrelease event dialing</del>
 4. <del>All the USB stuff, this will re-use many of the Arduino code</del>
-..* <del>Get a working USB communication</del>
-..* <del>Send the correct key event on keypress/keyrelease</del>
-..* <del>Remove dead/unuseful code</del>
+  * <del>Get a working USB communication</del>
+  * <del>Send the correct key event on keypress/keyrelease</del>
+  * <del>Remove dead/unuseful code</del>
 5. Tests & bugfix (to configure timing proprerly before going on)
 6. <del>Dynamic Sensibility Adjust</del>
 7. <del>Debouncing, & Debouncing settings</del>
 8. Add a description to this readme
-9. Smart discharge (i.e. using another timer)
+9. <del>Smart discharge (i.e. using another timer)<del>
 10. Makefile for all platforms
 11. Enrich Troubleshooting section
 12. Support for more boards (Arduino Uno, etc...)

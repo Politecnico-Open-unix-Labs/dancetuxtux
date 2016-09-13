@@ -24,14 +24,13 @@
 */
 
 #include <stdint.h> // uint8_t type
-#include <string.h> // memcpy
+#include <string.h> // memcpy, memmmove
 #include <stddef.h> // NULL pointer
 #include <avr/pgmspace.h>
 
 #include "cpu.h" // Almost all the needed to work with AVR controller
 #include "capacitive.h" // function defined in this code
 #include "pin_utils.h" // id_to_pin function
-#include "timer_utils.h" // many timer functions
 #include "capacitive_settings.h" // capacitive settings
 
 // Note: inline will not work between multiple files unless LTO is enabled (compile with -flto)
@@ -39,6 +38,53 @@ static uint8_t portb_bitmask, portc_bitmask, portd_bitmask, portf_bitmask; // in
 static uint8_t portb_used_mask, portc_used_mask, // automagic discharge when necessary
                portd_used_mask, portf_used_mask;
 static uint8_t _threshold;
+
+static inline
+void can_now_use_pin(pin_t pin) {
+    if (pin.port == &PORTB)
+        portb_used_mask &= (~pin.bitmask); // Clears only that bit
+    else if (pin.port == &PORTC)
+        portc_used_mask &= (~pin.bitmask); // Clears only that bit
+    else if (pin.port == &PORTD)
+        portd_used_mask &= (~pin.bitmask); // Clears only that bit
+    else if (pin.port == &PORTF)
+        portf_used_mask &= (~pin.bitmask); // Clears only that bit
+}
+
+#ifdef USE_DISCHARGE_TIMERS
+#   include "timer_utils.h" // many timer functions
+#   include <util/atomic.h> // Atomic functions (i.e. disabling interrupts)
+#   include <avr/interrupt.h> // ISR macro
+
+    static uint16_t waiting_ocra[MAX_PORT_NUM]; // Will hold Compare register for each port
+    static pin_t waiting_pin_no[MAX_PORT_NUM - 1]; // Holds pin number
+    static pin_t last_pin; // Holds last pin
+    static uint8_t waiting = 0; // Number of pin waiting
+
+    // TIMER ISR
+    ISR(TIMER3_COMPA_vect) {
+        uint16_t new_compare;
+
+        timer_stop(TIMER_ID_3); // Stops the timer for a while
+        if (waiting != 0) {
+            new_compare = timer3_compare(TIMER_COMP_A, NULL); // Gers current compare
+            new_compare -= waiting_ocra[0]; // USes the first aviable
+            timer3_compare(TIMER_COMP_A, &new_compare); // Sets new_compare
+            can_now_use_pin(last_pin);
+            // Moves data
+            last_pin = waiting_pin_no[0];
+            waiting--; // One less data in the queue
+            memmove(waiting_ocra, waiting_ocra + 1, sizeof(*waiting_ocra)*waiting);
+            memmove(waiting_pin_no, waiting_pin_no + 1, sizeof(*waiting_pin_no)*waiting);
+            timer_start(TIMER_ID_3); // Restarts the timer
+        } else {
+            // No more waiting pins, stops the timer
+            // (timer is stopped, do not restart!)
+            can_now_use_pin(last_pin);
+        }
+    }
+
+#endif // USE_DISCHARGE_TMERS not defined
 
 /* check pin low level function */
 static inline uint8_t check_pin(pin_t pin) __attribute__((always_inline));
@@ -125,6 +171,23 @@ uint8_t check_port(uint8_t in)
     uint8_t old_SREG; // to store interrupt configuration
     uint8_t * tmp_bitmask, * tmp_used_bitmask;
 
+#ifdef USE_DISCHARGE_TIMERS
+    static const uint16_t timer_comparator = ((double)DISCHARGE_TIME/1E6 * F_CPU)/1024.0; // 1024 = prescaler!
+    static uint8_t timer_initialized = 0;
+    uint16_t last_timer_read;
+    
+    if (timer_initialized == 0) { // Executes this only one time
+        // Inits timer 3
+        timer_enable(TIMER_ID_3);
+        timer_init(TIMER_ID_3, TIMER_SOURCE_CLK_1024, // Sets cpu clock / 1024 tick frequency
+                   TIMER_MODE_CTC_OCR, // When reaches Compare A resets
+                   OUT_MODE_NORMAL_A | OUT_MODE_NORMAL_B); // Not used output
+        timer_init_interrupt(TIMER_ID_3, TIMER_INTERRUPT_MODE_OCIA); // This enables interrupt, on compare A
+        // N.B. timer is now STOPPED
+        timer_initialized = 1; // All done for now.
+    }
+#endif
+
     pin = id_to_pin(in); // Gets an usable pin data structure
 
     // Safety code: check the pin is enabled for capacitive
@@ -151,9 +214,9 @@ uint8_t check_port(uint8_t in)
 
     // Now check if can read the port
     if ((tmp_used_bitmask == NULL) // This check might be unuseful
-            || (*tmp_used_bitmask & pin.bitmask)) // if port was used
+            || (*tmp_used_bitmask & pin.bitmask)) // if port was used recently
         discharge_ports(); // Cannot read data after use without a prior reset
-                           // so reset here
+                           // so reset here, now can use the port
 
     // Now we are ready to actually read
     _MemoryBarrier();
@@ -168,10 +231,39 @@ uint8_t check_port(uint8_t in)
     if (tmp_used_bitmask != NULL)
         *tmp_used_bitmask |= pin.bitmask;
 
+#ifdef USE_DISCHARGE_TIMERS
+    // Now starts a timer to discharge the port
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+        if (is_timer_running(TIMER_ID_3)) { // Someone else is waiting for a discharge
+        // Writes in the first free block, wich is waiting id
+            if (waiting < MAX_PORT_NUM) { // Everything OK
+                uint16_t tmp_read = timer3_count(NULL);
+                _MemoryBarrier();
+                waiting_ocra[waiting] = tmp_read - last_timer_read; // Difference with last read
+                last_timer_read = tmp_read; // Now this is last read
+                waiting_pin_no[waiting] = pin; // Waiting pin
+                waiting++;
+            } else {
+                // Cannot store that pin.
+                // Simply do nothing, the discharge_ports function
+                // will take care of this case automatically (but inefficently)
+            }
+        } else {
+            waiting = 0; // One pin waiting (well, the 0 might be confusing)
+            last_timer_read = 0;
+            last_pin = pin; // Current pin
+            timer3_compare(TIMER_COMP_A, &timer_comparator); // sets compare A
+            _MemoryBarrier(); // Firs compare, then timer start
+            timer_start(TIMER_ID_3); // Starts the timer and waits for the interrupt
+        } // end if
+    } // end atomic
+#endif
+
     return !!ret_val; // binary return, or 1, or 0
 }
 
 // ====== ALL THE 'HARD WORK' IS DONE HERE ======
+// ====== WARNING: DO NOT REMOVE CAP_DISCHARGE(); FUNCTION =====
 
 // N.B. _MemoryBarrier function forces r/w to follow the order. It should not slow down execution
 #define CAP_CHARGHE(_pin) do {                                                                                      \

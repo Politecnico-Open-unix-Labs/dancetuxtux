@@ -4,6 +4,17 @@
 #define START_THRESHOLD   0
 #define DISCHARGE_TIME    10 // in us
 
+// Enable it if you want timing discharge made with timers
+// NOTE: this will take 64 more bytes in RAM
+#define USE_DISCHARGE_TIMERS // undef to disable this operation
+                             // Timer used is TIMER 3, do not use for something else
+                             // Timer is set to use DISCHARGE_TIME
+
+#ifdef USE_DISCHARGE_TIMERS // If using timers
+#   define MAX_PORT_NUM 4 // This is the max number of ports at the same time
+                          // The code will handle inefficently each more pin waiting for discharge
+#endif
+
 // If you don't know what next parameters are leave them as they are
 #define SAMPLES_NUM 64 // Number of samples to take before choosing whether the button is pressed or not
 #define LOW_THRESHOLD  0.90 // must be in [0.00-1.00], choosing parameter
