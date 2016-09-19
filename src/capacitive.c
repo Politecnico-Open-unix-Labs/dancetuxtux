@@ -317,18 +317,19 @@ uint32_t capacitive_sensor_pressed(const capacitive_sensor_ptr_t sensors, const 
     retval = 0; // now have to choose retval
     for (sensor_id = 0; sensor_id < num; sensor_id++) { // sequentially for each sensor
         temp = circular_buffer_sum(sensors[sensor_id].low_buffer);
-        if (temp <= SAMPLES_NUM*(0.10)) { // Key release, sends keyrelease and probes again
-            sensors[sensor_id].hysteresis++;
-            if (sensors[sensor_id].hysteresis > HYSTERESIS) { // Actually send keyrelease
-                sensors[sensor_id].pressed = 0;
-                sensors[sensor_id].to_probe = 1;
-                sensors[sensor_id].gray_zone = 0;
-                sensors[sensor_id].hysteresis = 0;
+        if (temp <= SAMPLES_NUM*RELEASE_CONDITION) { // Key release, sends keyrelease and probes again
+            sensors[sensor_id].hysteresis_b++;
+            if (sensors[sensor_id].hysteresis_b >= HYSTERESIS_B) { // Actually send keyrelease
+                sensors[sensor_id].pressed = 0; // Key is no more pressed
+                sensors[sensor_id].to_probe = 1; // Need another probe, as usual
+                sensors[sensor_id].hysteresis_b = 0; // Resets before hysteresis
+                sensors[sensor_id].hysteresis_a = HYSTERESIS_A; // This must decrease to zero
             }
+            sensors[sensor_id].gray_zone = 0; // This is not  a greyzone
         } else if (temp <= SAMPLES_NUM*LOW_THRESHOLD) {
             sensors[sensor_id].gray_zone++; // it is not a keypress, but it is near to a keypress
             if (sensors[sensor_id].gray_zone >= MAX_TIME_IN_GRAYZONE) { // Spent too many time in grayzone, request re-probe without sending keypress
-                sensors[sensor_id].to_probe = 1;
+                sensors[sensor_id].to_probe = 1; // Too many time in grayzone means to probe again
                 sensors[sensor_id].pressed = 0; // Resets pressed status
             }
         } else {
@@ -336,11 +337,16 @@ uint32_t capacitive_sensor_pressed(const capacitive_sensor_ptr_t sensors, const 
         }
 
         temp = circular_buffer_sum(sensors[sensor_id].high_buffer);
-        if (temp >= SAMPLES_NUM*(0.90)) { // Key press, send kaypress and probes again sensibility
-            sensors[sensor_id].pressed = 1;
-            sensors[sensor_id].hysteresis = 0;
-            sensors[sensor_id].to_probe = 1;
-            sensors[sensor_id].gray_zone = 0;
+        if (temp >= SAMPLES_NUM*PRESS_CONDITION) { // Key press, send kaypress and probes again sensibility
+            if (sensors[sensor_id].hysteresis_a <= 0) { // 
+                sensors[sensor_id].pressed = 1; // now button is pressed
+                sensors[sensor_id].hysteresis_a = 0; 
+                sensors[sensor_id].hysteresis_b = 0; // inits hysteresys for keyrelease
+                sensors[sensor_id].to_probe = 1;
+            } else { // hysteresis_a not zero, must decrease first
+                sensors[sensor_id].hysteresis_a--;
+            }
+            sensors[sensor_id].gray_zone = 0; // This is not a grayzone
         } else if (temp >= SAMPLES_NUM*HIGH_THRESHOLD) { // gray_zone
             sensors[sensor_id].gray_zone++; // it is not a keypress, but it is near to a keypress
             if (sensors[sensor_id].gray_zone >= MAX_TIME_IN_GRAYZONE) { // Spent too many time in grayzone, request re-probe without sending keypress
@@ -354,7 +360,7 @@ uint32_t capacitive_sensor_pressed(const capacitive_sensor_ptr_t sensors, const 
         if (sensors[sensor_id].pressed == 1) // If after decision sensor has been pressed
             retval |= _BV(sensor_id); // Sets corresponding bit
         else
-            retval &= ~(_BV(sensor_id)); // Sets corresponding bit
+            retval &= ~(_BV(sensor_id)); // Clears corresponding bit
     } // end for
 
     return retval;
@@ -363,7 +369,7 @@ uint32_t capacitive_sensor_pressed(const capacitive_sensor_ptr_t sensors, const 
 static void capacitive_sensor_init_no_probe(const capacitive_sensor_ptr_t sensors, const uint8_t pin_id) {
     circular_buffer_init(sensors->low_buffer , sensors->low_buffer_data , SAMPLES_NUM);
     circular_buffer_init(sensors->high_buffer, sensors->high_buffer_data, SAMPLES_NUM);
-    sensors->hysteresis = 0; // default init
+    sensors->hysteresis_b = sensors->hysteresis_a = 0; // default init
     sensors->gray_zone = 0; // default init
     sensors->to_probe = 1; // this will cleared during probe
     sensors->pressed = 0; // Button starts not pressed

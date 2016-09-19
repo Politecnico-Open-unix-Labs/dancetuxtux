@@ -20,12 +20,22 @@
 #define LOW_THRESHOLD  0.90 // must be in [0.00-1.00], choosing parameter
 #define HIGH_THRESHOLD 0.10 // must be in [0.00-1.00], as above
 
+// Next two must be floating point in [0.0 - 1.0]
+#define PRESS_CONDITION    0.90 // Higher will press a key harder
+#define RELEASE_CONDITION  0.10 // Lower will release a key harder
+
+// Coarse sensibility adjust
 // Set next two to zero to disable the effect
 #define PRESS_THRESHOLD 1 // increase in sensor threshold before keypress
 #define RELEASE_THRESHOLD 0 // same as above for keyrelease (sensor threshold decrease)
-#define HYSTERESIS 10 // Time to wait before keyrelease
+
+#define HYSTERESIS_A 10 // Time to wait after a keyrelease and before sending the succesive
+#define HYSTERESIS_B 10 // Time to wait before keyrelease
+
+// Auto reset settings, they shouldn't be changed
+// Grayzone is the zone between PRESS and RELEASE condition.
 #define MAX_TIME_IN_GRAYZONE ((uint32_t)1E9) // uinsigned int between 0 and 2^32 -1
-                        // After that time in grayzone sensibility is reset
+                        // After that time in grayzone sensibility is reset and re probed
 #define MAX_PROBE_STEPS ((uint32_t)250) // sometimes probe gets stuck (don't know why).
                         // This forces exit after given number of steps
 

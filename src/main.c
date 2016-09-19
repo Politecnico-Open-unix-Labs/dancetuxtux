@@ -164,7 +164,7 @@ void main_loop(capacitive_sensor_t * sensors) {
 }
 
 int main(void) {
-    uint16_t timer_comparator = 64; // Increase to increase time
+    uint16_t timer_comparator = ((double)F_CPU/SAMPLES_PER_SECOND)/1024.0; // 1024 = clock prescaler
     capacitive_sensor_t sensors[inputs_len]; // One for each input
 
     cli();

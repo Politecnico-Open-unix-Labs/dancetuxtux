@@ -3,6 +3,7 @@
 
 #define USE_ARDUINO_LED // Each keypress will light the Arduino led
 #define USE_PROGMEM // Store globals inside executable flash rather than RAM
+#define SAMPLES_PER_SECOND 244 // Number of times per second a keypress is checked
 
 #define INPUT_PIN_UP    8
 #define INPUT_PIN_DOWN  9
