@@ -32,6 +32,10 @@
 #include "circular_buffer.h" // this code makes heavy use of circular buffers
 #include "capacitive_settings.h" // All the settings
 
+// Next requires C11
+_Static_assert(RELEASE_CONDITION <= LOW_THRESHOLD, "RELEASE_CONDITION macro must be greater than LOW_THRESHOLD");
+_Static_assert(PRESS_CONDITION >= HIGH_THRESHOLD, "PRESS_CONDITION macro must be less than HIGH_THRESHOLD");
+
 #define BUFFER_NONE 0x00
 #define BUFFER_HIGH 0x01
 #define BUFFER_LOW  0x02
@@ -298,6 +302,7 @@ uint32_t capacitive_sensor_pressed(const capacitive_sensor_ptr_t sensors, const 
     uint8_t sensor_id; // counter through sensors array
     uint8_t buffer_to_fill[num];
     uint8_t to_probe[num];
+    uint8_t last_status; // Button status, pressed / released
     uint32_t retval;
     circular_buffer_sum_t temp;
 
@@ -312,10 +317,12 @@ uint32_t capacitive_sensor_pressed(const capacitive_sensor_ptr_t sensors, const 
     probe(sensors, to_probe, num); // re-probes what needed
 
     memset(buffer_to_fill, BUFFER_BOTH, sizeof(buffer_to_fill));
-    fill_buffer(sensors, buffer_to_fill, num); // Fills buffer of readings
+    fill_buffer(sensors, buffer_to_fill, num); // Fills buffer of readings FOR ALL THE BUTTONS
 
     retval = 0; // now have to choose retval
     for (sensor_id = 0; sensor_id < num; sensor_id++) { // sequentially for each sensor
+        last_status = sensors[sensor_id].pressed; // Stores last button status
+
         temp = circular_buffer_sum(sensors[sensor_id].low_buffer);
         if (temp <= SAMPLES_NUM*RELEASE_CONDITION) { // Key release, sends keyrelease and probes again
             sensors[sensor_id].hysteresis_b++;
@@ -357,11 +364,21 @@ uint32_t capacitive_sensor_pressed(const capacitive_sensor_ptr_t sensors, const 
             sensors[sensor_id].gray_zone = 0;
         }
 
-        if (sensors[sensor_id].pressed == 1) // If after decision sensor has been pressed
+        // Fixes a non-release button
+        if (last_status == 1) // Button was initially pressed
+            if (sensors[sensor_id].low_threshold <= sensors[sensor_id].released_threshold)
+                sensors[sensor_id].pressed = 0; // now button is pressed
+
+        // Now sets the retval
+        if (sensors[sensor_id].pressed == 1) { // If after decision sensor has been pressed
+            if (last_status == 0) // Not pressed before
+                sensors[sensor_id].released_threshold = sensors[sensor_id].low_threshold; // Stores low threshold
+
             retval |= _BV(sensor_id); // Sets corresponding bit
-        else
+        } else {
             retval &= ~(_BV(sensor_id)); // Clears corresponding bit
-    } // end for
+        }
+   } // end for
 
     return retval;
 }
@@ -369,9 +386,10 @@ uint32_t capacitive_sensor_pressed(const capacitive_sensor_ptr_t sensors, const 
 static void capacitive_sensor_init_no_probe(const capacitive_sensor_ptr_t sensors, const uint8_t pin_id) {
     circular_buffer_init(sensors->low_buffer , sensors->low_buffer_data , SAMPLES_NUM);
     circular_buffer_init(sensors->high_buffer, sensors->high_buffer_data, SAMPLES_NUM);
-    sensors->hysteresis_b = sensors->hysteresis_a = 0; // default init
-    sensors->gray_zone = 0; // default init
-    sensors->to_probe = 1; // this will cleared during probe
+    sensors->hysteresis_b = sensors->hysteresis_a = 0; // Default init
+    sensors->released_threshold = 0; // Default init
+    sensors->gray_zone = 0; // Default init
+    sensors->to_probe = 1; // This will cleared during probe
     sensors->pressed = 0; // Button starts not pressed
     sensors->pin = pin_id; // Pins  to read. Make sure the pin is configured in low level configurations
     sensors->high_threshold = sensors->low_threshold = 0; // Should change when probing

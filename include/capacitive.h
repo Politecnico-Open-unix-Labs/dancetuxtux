@@ -13,9 +13,10 @@ struct capacitive_sensor_t {
     uint8_t high_buffer_data[BUF_LEN]; // Actual buffer where data is stored
     circular_buffer_t low_buffer, high_buffer; // Buffer wrapper
     uint8_t high_threshold, low_threshold; // between 0 and 255
+    uint8_t released_threshold; // Set on each keypress
     uint16_t hysteresis_a, hysteresis_b; // Avoid send a double press when actually is only one
     uint32_t gray_zone; // Time in spent gray zone
-    uint8_t pin:6; // pin on which to execute the measurement
+    uint8_t pin:6; // pin  Number on which to execute the measurement
     uint8_t to_probe:1; // true if needed to re-calibrate the sensor
     uint8_t pressed:1; // true wether pressed, else false
 };

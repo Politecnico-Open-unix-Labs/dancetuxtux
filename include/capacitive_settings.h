@@ -16,21 +16,21 @@
 #endif
 
 // If you don't know what next parameters are leave them as they are
-#define SAMPLES_NUM 64 // Number of samples to take before choosing whether the button is pressed or not
+#define SAMPLES_NUM 32 // Number of samples to take before choosing whether the button is pressed or not
 #define LOW_THRESHOLD  0.90 // must be in [0.00-1.00], choosing parameter
 #define HIGH_THRESHOLD 0.10 // must be in [0.00-1.00], as above
 
 // Next two must be floating point in [0.0 - 1.0]
-#define PRESS_CONDITION    0.90 // Higher will press a key harder
-#define RELEASE_CONDITION  0.10 // Lower will release a key harder
+#define PRESS_CONDITION    0.80 // Higher will press a key harder
+#define RELEASE_CONDITION  0.80 // Lower will release a key harder
 
 // Coarse sensibility adjust
 // Set next two to zero to disable the effect
 #define PRESS_THRESHOLD 1 // increase in sensor threshold before keypress
 #define RELEASE_THRESHOLD 0 // same as above for keyrelease (sensor threshold decrease)
 
-#define HYSTERESIS_A 10 // Time to wait after a keyrelease and before sending the succesive
-#define HYSTERESIS_B 10 // Time to wait before keyrelease
+#define HYSTERESIS_A 0 // Time to wait after a keyrelease and before sending the succesive
+#define HYSTERESIS_B 0 // Time to wait before keyrelease
 
 // Auto reset settings, they shouldn't be changed
 // Grayzone is the zone between PRESS and RELEASE condition.
