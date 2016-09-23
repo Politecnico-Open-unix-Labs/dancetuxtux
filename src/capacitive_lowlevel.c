@@ -174,7 +174,7 @@ uint8_t check_port(uint8_t in)
 #ifdef USE_DISCHARGE_TIMERS
     static const uint16_t timer_comparator = ((double)DISCHARGE_TIME/1E6 * F_CPU)/1024.0; // 1024 = prescaler!
     static uint8_t timer_initialized = 0;
-    uint16_t last_timer_read;
+    static uint16_t last_timer_read = 0;
     
     if (timer_initialized == 0) { // Executes this only one time
         // Inits timer 3

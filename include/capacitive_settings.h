@@ -26,7 +26,7 @@
 
 // Coarse sensibility adjust
 // Set next two to zero to disable the effect
-#define PRESS_THRESHOLD 1 // increase in sensor threshold before keypress
+#define PRESS_THRESHOLD 3 // increase in sensor threshold before keypress
 #define RELEASE_THRESHOLD 0 // same as above for keyrelease (sensor threshold decrease)
 
 #define HYSTERESIS_A 0 // Time to wait after a keyrelease and before sending the succesive

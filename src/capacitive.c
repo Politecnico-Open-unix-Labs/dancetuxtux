@@ -316,7 +316,7 @@ uint32_t capacitive_sensor_pressed(const capacitive_sensor_ptr_t sensors, const 
     }
     probe(sensors, to_probe, num); // re-probes what needed
 
-    memset(buffer_to_fill, BUFFER_BOTH, sizeof(buffer_to_fill));
+    memset(buffer_to_fill, BUFFER_BOTH, sizeof(buffer_to_fill)); // Buffer to fill is an uint8_t array
     fill_buffer(sensors, buffer_to_fill, num); // Fills buffer of readings FOR ALL THE BUTTONS
 
     retval = 0; // now have to choose retval
@@ -364,7 +364,7 @@ uint32_t capacitive_sensor_pressed(const capacitive_sensor_ptr_t sensors, const 
             sensors[sensor_id].gray_zone = 0;
         }
 
-        // Fixes a non-release button
+        // Fixes a non-release button. If reaches an old threshold mode
         if (last_status == 1) // Button was initially pressed
             if (sensors[sensor_id].low_threshold <= sensors[sensor_id].released_threshold)
                 sensors[sensor_id].pressed = 0; // now button is pressed
